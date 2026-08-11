@@ -64,6 +64,7 @@
 - Adjust project copy
 - Publish staged GitHub release drafts
 - Repair release integration contracts
+- Harden desktop startup and diagnostics (#343)
 
 ### 🧪 Testing
 

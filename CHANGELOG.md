@@ -71,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adjust project copy
 - Publish staged GitHub release drafts
 - Repair release integration contracts
+- Harden desktop startup and diagnostics (#343)
 
 ### 🧪 Testing
 
