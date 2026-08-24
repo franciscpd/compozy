@@ -68,13 +68,26 @@ func describedHookEventNames(events []contracts.DescribeHookEvent) []string {
 
 func normalizeDescribeHookEvent(event contracts.DescribeHookEvent) contracts.DescribeHookEvent {
 	return contracts.DescribeHookEvent{
-		Name:     strings.TrimSpace(event.Name),
+		Name:     normalizeDetectableDescribeOptional(event.Name),
 		Event:    contracts.HookEvent(strings.TrimSpace(string(event.Event))),
 		Profile:  strings.TrimSpace(event.Profile),
-		Mode:     contracts.HookMode(strings.TrimSpace(string(event.Mode))),
+		Mode:     contracts.HookMode(normalizeDetectableDescribeOptional(string(event.Mode))),
 		Matcher:  cloneDescribeHookMatcher(event.Matcher),
 		Required: event.Required,
 	}
+}
+
+func normalizeDetectableDescribeOptional(value string) string {
+	// The value-typed public contract cannot distinguish exact empty from omission.
+	// Preserve non-empty whitespace so manifest validation can still reject authored presence.
+	if value == "" {
+		return ""
+	}
+	normalized := strings.TrimSpace(value)
+	if normalized == "" {
+		return value
+	}
+	return normalized
 }
 
 func cloneDescribeHookMatcher(matcher contracts.HookMatcher) contracts.HookMatcher {

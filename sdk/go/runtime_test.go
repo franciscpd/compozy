@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"reflect"
 	goruntime "runtime"
 	"slices"
 	"strings"
@@ -222,28 +223,65 @@ func testExtensionRuntimeBuiltInAndCustomMethods(t *testing.T) {
 
 func TestExtensionDescribeHookDeclarations(t *testing.T) {
 	t.Parallel()
-	t.Run("Should normalize hook declarations without mutating caller data", testExtensionDescribeHookDeclarations)
+	t.Run("Should preserve the legacy event-only wire declaration", testExtensionDescribeLegacyHookDeclaration)
+	t.Run("Should preserve detectable invalid optional presence", testExtensionDescribeInvalidHookPresence)
+	t.Run("Should normalize complete hook declarations without mutating caller data", testExtensionDescribeCompleteHookDeclarations)
+	t.Run("Should order hook declarations by UTF-8 bytes", testExtensionDescribeHookDeclarationOrder)
 }
 
-func testExtensionDescribeHookDeclarations(t *testing.T) {
+func testExtensionDescribeLegacyHookDeclaration(t *testing.T) {
 	t.Parallel()
 
-	readOnly := true
-	duplicateReadOnly := true
+	hooks := describeHookEvents(t, []compozysdk.DescribeHookEvent{{Event: contracts.HookEventToolPreCall}})
+	if len(hooks) != 1 {
+		t.Fatalf("Describe().HookEvents = %#v, want one event-only declaration", hooks)
+	}
+	encoded, err := json.Marshal(hooks[0])
+	if err != nil {
+		t.Fatalf("json.Marshal(event-only hook) error = %v", err)
+	}
+	if string(encoded) != `{"event":"tool.pre_call"}` {
+		t.Fatalf("event-only hook JSON = %s, want exact legacy wire declaration", encoded)
+	}
+}
+
+func testExtensionDescribeInvalidHookPresence(t *testing.T) {
+	t.Parallel()
+
+	hooks := describeHookEvents(t, []compozysdk.DescribeHookEvent{
+		{Name: "", Event: contracts.HookEventToolPreCall, Mode: ""},
+		{Name: "   ", Event: contracts.HookEventToolPreCall, Profile: "invalid", Mode: " \t "},
+	})
+	if len(hooks) != 2 {
+		t.Fatalf("Describe().HookEvents = %#v, want exact-empty absence and whitespace presence", hooks)
+	}
+	encodedLegacy, err := json.Marshal(hooks[0])
+	if err != nil {
+		t.Fatalf("json.Marshal(exact-empty hook) error = %v", err)
+	}
+	if string(encodedLegacy) != `{"event":"tool.pre_call"}` {
+		t.Fatalf("exact-empty hook JSON = %s, want semantic absence", encodedLegacy)
+	}
+	encodedInvalid, err := json.Marshal(hooks[1])
+	if err != nil {
+		t.Fatalf("json.Marshal(whitespace hook) error = %v", err)
+	}
+	if string(encodedInvalid) != `{"name":"   ","event":"tool.pre_call","profile":"invalid","mode":" \t "}` {
+		t.Fatalf("whitespace hook JSON = %s, want detectable invalid presence", encodedInvalid)
+	}
+}
+
+func testExtensionDescribeCompleteHookDeclarations(t *testing.T) {
+	t.Parallel()
+
+	readOnly := false
+	duplicateReadOnly := false
 	hookEvents := []compozysdk.DescribeHookEvent{
 		{
 			Name: " zeta-guard ", Event: contracts.HookEvent(" automation.job.pre_fire "),
 			Profile: " z-profile ", Mode: contracts.HookMode(" sync "),
-			Matcher: contracts.HookMatcher{
-				AgentName: " batuta-publisher ", ToolReadOnly: &readOnly,
-				Autonomy: &contracts.AutonomyMatcher{TaskID: " task-zeta ", SpawnRole: " publisher "},
-			},
+			Matcher:  completeDescribeHookMatcher(&readOnly),
 			Required: true,
-		},
-		{
-			Name: " beta-guard ", Event: contracts.HookEvent(" tool.pre_call "),
-			Profile: " a-profile ", Mode: contracts.HookMode(" sync "),
-			Matcher: contracts.HookMatcher{AgentName: " batuta-publisher "}, Required: true,
 		},
 		{
 			Name: " alpha-guard ", Event: contracts.HookEvent(" tool.pre_call "),
@@ -251,52 +289,172 @@ func testExtensionDescribeHookDeclarations(t *testing.T) {
 			Matcher: contracts.HookMatcher{AgentName: " batuta-reviewer "}, Required: true,
 		},
 		{
-			Name: " zeta-guard ", Event: contracts.HookEvent(" automation.job.pre_fire "),
-			Profile: " z-profile ", Mode: contracts.HookMode(" sync "),
+			Name: " alpha-guard ", Event: contracts.HookEvent(" tool.pre_call "),
+			Profile: " a-profile ", Mode: contracts.HookMode(" async "),
+			Matcher: contracts.HookMatcher{AgentName: " batuta-reviewer "}, Required: true,
+		},
+		{
+			Name: " alpha-guard ", Event: contracts.HookEvent(" tool.pre_call "),
+			Profile: " a-profile ", Mode: contracts.HookMode(" sync "),
+			Matcher: contracts.HookMatcher{AgentName: " batuta-publisher "}, Required: true,
+		},
+		{
+			Name: " alpha-guard ", Event: contracts.HookEvent(" tool.pre_call "),
+			Profile: " a-profile ", Mode: contracts.HookMode(" sync "),
+			Matcher: contracts.HookMatcher{AgentName: " batuta-reviewer "}, Required: false,
+		},
+		{
+			Name: " alpha-guard ", Event: contracts.HookEvent(" tool.pre_call "),
+			Profile: " a-profile ", Mode: contracts.HookMode(" sync "),
+			Matcher: contracts.HookMatcher{AgentName: " batuta-reviewer ", ToolReadOnly: &readOnly}, Required: true,
+		},
+		{
+			Name: " alpha-guard ", Event: contracts.HookEvent(" tool.pre_call "),
+			Profile: " a-profile ", Mode: contracts.HookMode(" sync "),
 			Matcher: contracts.HookMatcher{
-				AgentName: " batuta-publisher ", ToolReadOnly: &duplicateReadOnly,
-				Autonomy: &contracts.AutonomyMatcher{TaskID: " task-zeta ", SpawnRole: " publisher "},
+				AgentName: " batuta-reviewer ", Autonomy: &contracts.AutonomyMatcher{},
 			},
 			Required: true,
 		},
+		{
+			Name: " zeta-guard ", Event: contracts.HookEvent(" automation.job.pre_fire "),
+			Profile: " z-profile ", Mode: contracts.HookMode(" sync "),
+			Matcher:  completeDescribeHookMatcher(&duplicateReadOnly),
+			Required: true,
+		},
 	}
+	hooks := describeHookEvents(t, hookEvents)
+	if len(hooks) != 7 {
+		t.Fatalf("Describe().HookEvents = %#v, want six same-identity variants plus one deduplicated complete matcher", hooks)
+	}
+	var normalized contracts.DescribeHookEvent
+	var base, modeVariant, matcherVariant, requiredVariant, falseVariant, emptyAutonomyVariant bool
+	for _, hook := range hooks {
+		if hook.Name == "zeta-guard" {
+			normalized = hook
+			continue
+		}
+		switch {
+		case hook.Matcher.ToolReadOnly != nil && !*hook.Matcher.ToolReadOnly:
+			falseVariant = true
+		case hook.Matcher.Autonomy != nil && reflect.ValueOf(*hook.Matcher.Autonomy).IsZero():
+			emptyAutonomyVariant = true
+		case hook.Mode == "async":
+			modeVariant = true
+		case hook.Matcher.AgentName == "batuta-publisher":
+			matcherVariant = true
+		case !hook.Required:
+			requiredVariant = true
+		case hook.Mode == "sync" && hook.Matcher.AgentName == "batuta-reviewer" && hook.Required:
+			base = true
+		}
+	}
+	if !base || !modeVariant || !matcherVariant || !requiredVariant || !falseVariant || !emptyAutonomyVariant {
+		t.Fatalf("same-identity variants were lost: %#v", hooks)
+	}
+	if normalized.Event != contracts.HookEvent("automation.job.pre_fire") ||
+		normalized.Profile != "z-profile" || normalized.Mode != contracts.HookMode("sync") ||
+		normalized.Matcher.AgentName != "agent-name" || !normalized.Required {
+		t.Fatalf("complete hook = %#v, want normalized enriched declaration", normalized)
+	}
+	if normalized.Matcher.ToolReadOnly == nil || *normalized.Matcher.ToolReadOnly {
+		t.Fatalf("complete matcher ToolReadOnly = %#v, want present false", normalized.Matcher.ToolReadOnly)
+	}
+	assertCompleteDescribeHookMatcher(t, normalized.Matcher)
+	if reflect.TypeFor[contracts.HookMatcher]().NumField() != 29 ||
+		reflect.TypeFor[contracts.AutonomyMatcher]().NumField() != 13 {
+		t.Fatal("generated matcher contract grew without exhaustive normalization coverage")
+	}
+	*normalized.Matcher.ToolReadOnly = true
+	normalized.Matcher.Autonomy.TaskID = "changed"
+	if readOnly || hookEvents[0].Matcher.AgentName != " agent-name " ||
+		hookEvents[0].Matcher.Autonomy.TaskID != " task-id " {
+		t.Fatalf("Describe() mutated caller matcher: %#v", hookEvents[0].Matcher)
+	}
+}
+
+func testExtensionDescribeHookDeclarationOrder(t *testing.T) {
+	t.Parallel()
+
+	names := []string{"😀-guard", "é-guard", "a-guard", "A-guard", "!-guard", "�-guard"}
+	events := make([]compozysdk.DescribeHookEvent, 0, len(names))
+	for _, name := range names {
+		events = append(events, compozysdk.DescribeHookEvent{Name: name, Event: contracts.HookEventToolPreCall})
+	}
+	hooks := describeHookEvents(t, events)
+	want := []string{"!-guard", "A-guard", "a-guard", "é-guard", "�-guard", "😀-guard"}
+	for index, name := range want {
+		if hooks[index].Name != name {
+			t.Fatalf("UTF-8 hook order = %#v, want %#v", hooks, want)
+		}
+	}
+}
+
+func describeHookEvents(t *testing.T, events []compozysdk.DescribeHookEvent) []contracts.DescribeHookEvent {
+	t.Helper()
 	extension := compozysdk.NewExtension(compozysdk.ExtensionDefinition{
 		Name: "hook-describe", Version: "0.1.0",
 		Subprocess:          compozysdk.DescribeSubprocess{Command: "./hook-describe"},
-		SupportedHookEvents: hookEvents,
+		SupportedHookEvents: events,
 	})
-
 	payload, err := extension.Describe()
 	if err != nil {
 		t.Fatalf("Describe() error = %v", err)
 	}
-	if len(payload.HookEvents) != 3 {
-		t.Fatalf("Describe().HookEvents = %#v, want three unique complete declarations", payload.HookEvents)
+	return payload.HookEvents
+}
+
+func completeDescribeHookMatcher(readOnly *bool) contracts.HookMatcher {
+	return contracts.HookMatcher{
+		AgentName: " agent-name ", AgentType: " agent-type ", WorkspaceID: " workspace-id ",
+		WorktreeID: " worktree-id ", WorkspaceRoot: " workspace-root ", SessionType: " session-type ",
+		SandboxID: " sandbox-id ", SandboxBackend: " sandbox-backend ", SandboxProfile: " sandbox-profile ",
+		SyncDirection: " sync-direction ", InputClass: " input-class ", ACPEventType: " acp-event-type ",
+		TurnID: " turn-id ", ToolID: " tool-id ", ToolName: " tool-name ", ToolReadOnly: readOnly,
+		DecisionClass: " decision-class ", MessageRole: " message-role ", MessageDeltaType: " message-delta-type ",
+		Channel: " channel ", Surface: " surface ", Kind: " kind ", Direction: " direction ",
+		WorkState: " work-state ", ParticipationMode: " participation-mode ",
+		ParticipationSource: " participation-source ", Reason: " compaction-reason ",
+		Strategy: " compaction-strategy ", Autonomy: &contracts.AutonomyMatcher{
+			TaskID: " task-id ", RunID: " run-id ", LoopRunID: " loop-run-id ", LoopName: " loop-name ",
+			NodeID: " node-id ", WorkflowID: " workflow-id ", ParticipationChannel: " participation-channel ",
+			CoordinatorSessionID: " coordinator-session-id ", ParentSessionID: " parent-session-id ",
+			RootSessionID: " root-session-id ", ChildSessionID: " child-session-id ",
+			SpawnRole: " spawn-role ", ReleaseReason: " release-reason ",
+		},
 	}
-	wantOrder := []string{"alpha-guard", "beta-guard", "zeta-guard"}
-	for index, wantName := range wantOrder {
-		if payload.HookEvents[index].Name != wantName {
-			t.Fatalf("Describe().HookEvents[%d].Name = %q, want %q", index, payload.HookEvents[index].Name, wantName)
-		}
+}
+
+func assertCompleteDescribeHookMatcher(t *testing.T, matcher contracts.HookMatcher) {
+	t.Helper()
+	encoded, err := json.Marshal(matcher)
+	if err != nil {
+		t.Fatalf("json.Marshal(complete matcher) error = %v", err)
 	}
-	normalized := payload.HookEvents[2]
-	if normalized.Event != contracts.HookEvent("automation.job.pre_fire") ||
-		normalized.Profile != "z-profile" || normalized.Mode != contracts.HookMode("sync") ||
-		normalized.Matcher.AgentName != "batuta-publisher" || !normalized.Required {
-		t.Fatalf("Describe().HookEvents[2] = %#v, want normalized enriched declaration", normalized)
+	var got map[string]any
+	if err := json.Unmarshal(encoded, &got); err != nil {
+		t.Fatalf("json.Unmarshal(complete matcher) error = %v", err)
 	}
-	if normalized.Matcher.ToolReadOnly == nil || !*normalized.Matcher.ToolReadOnly {
-		t.Fatalf("Describe().HookEvents[2].Matcher.ToolReadOnly = %#v, want true", normalized.Matcher.ToolReadOnly)
+	want := map[string]any{
+		"agent_name": "agent-name", "agent_type": "agent-type", "workspace_id": "workspace-id",
+		"worktree_id": "worktree-id", "workspace_root": "workspace-root", "session_type": "session-type",
+		"sandbox_id": "sandbox-id", "sandbox_backend": "sandbox-backend", "sandbox_profile": "sandbox-profile",
+		"sync_direction": "sync-direction", "input_class": "input-class", "acp_event_type": "acp-event-type",
+		"turn_id": "turn-id", "tool_id": "tool-id", "tool_name": "tool-name", "tool_read_only": false,
+		"decision_class": "decision-class", "message_role": "message-role", "message_delta_type": "message-delta-type",
+		"channel": "channel", "surface": "surface", "kind": "kind", "direction": "direction",
+		"work_state": "work-state", "participation_mode": "participation-mode",
+		"participation_source": "participation-source", "compaction_reason": "compaction-reason",
+		"compaction_strategy": "compaction-strategy", "autonomy": map[string]any{
+			"task_id": "task-id", "run_id": "run-id", "loop_run_id": "loop-run-id", "loop_name": "loop-name",
+			"node_id": "node-id", "workflow_id": "workflow-id", "participation_channel": "participation-channel",
+			"coordinator_session_id": "coordinator-session-id", "parent_session_id": "parent-session-id",
+			"root_session_id": "root-session-id", "child_session_id": "child-session-id",
+			"spawn_role": "spawn-role", "release_reason": "release-reason",
+		},
 	}
-	if normalized.Matcher.Autonomy == nil || normalized.Matcher.Autonomy.TaskID != "task-zeta" ||
-		normalized.Matcher.Autonomy.SpawnRole != "publisher" {
-		t.Fatalf("Describe().HookEvents[2].Matcher.Autonomy = %#v, want normalized nested matcher", normalized.Matcher.Autonomy)
-	}
-	*normalized.Matcher.ToolReadOnly = false
-	normalized.Matcher.Autonomy.TaskID = "changed"
-	if !readOnly || hookEvents[0].Matcher.AgentName != " batuta-publisher " ||
-		hookEvents[0].Matcher.Autonomy.TaskID != " task-zeta " {
-		t.Fatalf("Describe() mutated caller matcher: %#v", hookEvents[0].Matcher)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("complete matcher JSON = %#v, want %#v", got, want)
 	}
 }
 

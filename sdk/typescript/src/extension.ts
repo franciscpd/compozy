@@ -44,6 +44,7 @@ import { buildExtensionSession } from "./extension-session.js";
 import {
   buildExtensionDescribePayload,
   cloneExtensionToolDescriptors,
+  compareUTF8Strings,
   defaultExtensionDescribeProcess,
   runExtensionDescribeMode,
 } from "./extension-describe.js";
@@ -265,7 +266,7 @@ export class Extension {
     for (const item of this.definition.supported_hook_events ?? []) {
       events.add(item.event.trim() as HookEvent);
     }
-    return [...events].sort((left, right) => left.localeCompare(right));
+    return [...events].sort(compareUTF8Strings);
   }
 
   public getToolDescriptors(): ExtensionToolRuntimeDescriptor[] {

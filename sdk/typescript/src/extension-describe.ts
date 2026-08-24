@@ -26,6 +26,24 @@ interface ExtensionDescribeInput {
   sdkVersion: string;
 }
 
+const UTF8_ENCODER = new TextEncoder();
+
+export function compareUTF8Strings(left: string, right: string): number {
+  if (left === right) {
+    return 0;
+  }
+  const leftBytes = UTF8_ENCODER.encode(left);
+  const rightBytes = UTF8_ENCODER.encode(right);
+  const sharedLength = Math.min(leftBytes.length, rightBytes.length);
+  for (let index = 0; index < sharedLength; index += 1) {
+    const compared = (leftBytes[index] ?? 0) - (rightBytes[index] ?? 0);
+    if (compared !== 0) {
+      return compared;
+    }
+  }
+  return leftBytes.length - rightBytes.length;
+}
+
 export function defaultExtensionDescribeProcess(): ExtensionDescribeProcess {
   return {
     argv: process.argv,
@@ -148,15 +166,15 @@ function normalizeDescribeHookEvents(events: DescribeHookEvent[] | undefined): D
   const unique = new Map<string, DescribeHookEvent>();
   for (const item of events ?? []) {
     const event = item.event.trim() as DescribeHookEvent["event"];
-    const name = item.name?.trim();
+    const name = normalizeDetectableDescribeOptional(item.name);
     const profile = item.profile?.trim();
-    const mode = item.mode?.trim() as DescribeHookEvent["mode"];
+    const mode = normalizeDetectableDescribeOptional(item.mode) as DescribeHookEvent["mode"];
     const matcher = item.matcher === undefined ? undefined : cloneDescribeHookMatcher(item.matcher);
     const normalized: DescribeHookEvent = {
-      ...(name ? { name } : {}),
+      ...(name !== undefined ? { name } : {}),
       event,
       ...(profile ? { profile } : {}),
-      ...(mode ? { mode } : {}),
+      ...(mode !== undefined ? { mode } : {}),
       ...(matcher !== undefined && Object.keys(matcher).length > 0 ? { matcher } : {}),
       ...(item.required ? { required: true } : {}),
     };
@@ -167,16 +185,39 @@ function normalizeDescribeHookEvents(events: DescribeHookEvent[] | undefined): D
   }
   return [...unique.values()].sort(
     (left, right) =>
-      (left.profile ?? "").localeCompare(right.profile ?? "") ||
-      left.event.localeCompare(right.event) ||
-      (left.name ?? "").localeCompare(right.name ?? "") ||
-      describeHookEventKey(left).localeCompare(describeHookEventKey(right))
+      compareUTF8Strings(left.profile ?? "", right.profile ?? "") ||
+      compareUTF8Strings(left.event, right.event) ||
+      compareUTF8Strings(left.name ?? "", right.name ?? "") ||
+      compareUTF8Strings(describeHookEventKey(left), describeHookEventKey(right))
   );
 }
 
-type HookMatcherStringKey = Exclude<keyof HookMatcher, "tool_read_only" | "autonomy">;
+function normalizeDetectableDescribeOptional(value: string | undefined): string | undefined {
+  // Exact empty follows Go's value-typed absent form; non-empty whitespace must remain rejectable.
+  if (value === undefined || value === "") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized === "" ? value : normalized;
+}
 
-const HOOK_MATCHER_STRING_KEYS = [
+type StringKeyOf<T> = {
+  [Key in keyof T]-?: Exclude<T[Key], undefined> extends string ? Key : never;
+}[keyof T];
+
+type HookMatcherStringKey = StringKeyOf<HookMatcher>;
+type AutonomyMatcherStringKey = StringKeyOf<AutonomyMatcher>;
+
+function defineExhaustiveStringKeys<AllKeys extends string>() {
+  return <Keys extends readonly AllKeys[]>(
+    keys: Keys &
+      (Exclude<AllKeys, Keys[number]> extends never
+        ? unknown
+        : { missing: Exclude<AllKeys, Keys[number]> })
+  ): Keys => keys;
+}
+
+const HOOK_MATCHER_STRING_KEYS_BEFORE_TOOL_READ_ONLY = [
   "agent_name",
   "agent_type",
   "workspace_id",
@@ -192,6 +233,9 @@ const HOOK_MATCHER_STRING_KEYS = [
   "turn_id",
   "tool_id",
   "tool_name",
+] as const satisfies readonly HookMatcherStringKey[];
+
+const HOOK_MATCHER_STRING_KEYS_AFTER_TOOL_READ_ONLY = [
   "decision_class",
   "message_role",
   "message_delta_type",
@@ -206,7 +250,12 @@ const HOOK_MATCHER_STRING_KEYS = [
   "compaction_strategy",
 ] as const satisfies readonly HookMatcherStringKey[];
 
-const AUTONOMY_MATCHER_STRING_KEYS = [
+const HOOK_MATCHER_STRING_KEYS = defineExhaustiveStringKeys<HookMatcherStringKey>()([
+  ...HOOK_MATCHER_STRING_KEYS_BEFORE_TOOL_READ_ONLY,
+  ...HOOK_MATCHER_STRING_KEYS_AFTER_TOOL_READ_ONLY,
+] as const);
+
+const AUTONOMY_MATCHER_STRING_KEYS = defineExhaustiveStringKeys<AutonomyMatcherStringKey>()([
   "task_id",
   "run_id",
   "loop_run_id",
@@ -220,17 +269,12 @@ const AUTONOMY_MATCHER_STRING_KEYS = [
   "child_session_id",
   "spawn_role",
   "release_reason",
-] as const satisfies readonly (keyof AutonomyMatcher)[];
+] as const);
 
 function cloneDescribeHookMatcher(matcher: HookMatcher): HookMatcher {
   const cloned: HookMatcher = {};
   const target = cloned as Record<HookMatcherStringKey, string | undefined>;
-  for (const key of HOOK_MATCHER_STRING_KEYS) {
-    const value = matcher[key]?.trim();
-    if (value) {
-      target[key] = value;
-    }
-  }
+  copyTrimmedMatcherStrings(target, matcher, HOOK_MATCHER_STRING_KEYS);
   if (matcher.tool_read_only !== undefined) {
     cloned.tool_read_only = matcher.tool_read_only;
   }
@@ -240,9 +284,22 @@ function cloneDescribeHookMatcher(matcher: HookMatcher): HookMatcher {
   return cloned;
 }
 
+function copyTrimmedMatcherStrings(
+  target: Record<HookMatcherStringKey, string | undefined>,
+  matcher: HookMatcher,
+  keys: readonly HookMatcherStringKey[]
+): void {
+  for (const key of keys) {
+    const value = matcher[key]?.trim();
+    if (value) {
+      target[key] = value;
+    }
+  }
+}
+
 function cloneDescribeAutonomyMatcher(matcher: AutonomyMatcher): AutonomyMatcher {
   const cloned: AutonomyMatcher = {};
-  const target = cloned as Record<keyof AutonomyMatcher, string | undefined>;
+  const target = cloned as Record<AutonomyMatcherStringKey, string | undefined>;
   for (const key of AUTONOMY_MATCHER_STRING_KEYS) {
     const value = matcher[key]?.trim();
     if (value) {
@@ -253,14 +310,36 @@ function cloneDescribeAutonomyMatcher(matcher: AutonomyMatcher): AutonomyMatcher
 }
 
 function describeHookEventKey(event: DescribeHookEvent): string {
-  return JSON.stringify([
-    event.profile ?? "",
-    event.event,
-    event.name ?? "",
-    event.mode ?? "",
-    event.matcher ?? {},
-    event.required ?? false,
-  ]);
+  const parts: string[] = [];
+  appendDescribeKeyPart(parts, event.profile ?? "");
+  appendDescribeKeyPart(parts, event.event);
+  appendDescribeKeyPart(parts, event.name ?? "");
+  appendDescribeKeyPart(parts, event.mode ?? "");
+  appendDescribeHookMatcherKey(parts, event.matcher);
+  parts.push(event.required ? "1" : "0");
+  return parts.join("");
+}
+
+function appendDescribeHookMatcherKey(parts: string[], matcher: HookMatcher | undefined): void {
+  for (const key of HOOK_MATCHER_STRING_KEYS_BEFORE_TOOL_READ_ONLY) {
+    appendDescribeKeyPart(parts, matcher?.[key] ?? "");
+  }
+  parts.push(matcher?.tool_read_only === undefined ? "n" : matcher.tool_read_only ? "t" : "f");
+  for (const key of HOOK_MATCHER_STRING_KEYS_AFTER_TOOL_READ_ONLY) {
+    appendDescribeKeyPart(parts, matcher?.[key] ?? "");
+  }
+  if (matcher?.autonomy === undefined) {
+    parts.push("n");
+    return;
+  }
+  parts.push("v");
+  for (const key of AUTONOMY_MATCHER_STRING_KEYS) {
+    appendDescribeKeyPart(parts, matcher.autonomy[key] ?? "");
+  }
+}
+
+function appendDescribeKeyPart(parts: string[], value: string): void {
+  parts.push(`${UTF8_ENCODER.encode(value).length}:${value}`);
 }
 
 function normalizeDescribeProfiles(profiles: DescribeProfile[] | undefined): DescribeProfile[] {

@@ -34,6 +34,7 @@ import type { TransportHandler } from "../transport.js";
 import type {
   DescribeHookEvent,
   DescribePayload,
+  HookMatcher,
   InitializeRequest,
   JSONValue,
   ViewFrame,
@@ -107,6 +108,113 @@ function initializeFor(extension: Extension): InitializeRequest {
       shutdown_timeout_ms: 10_000,
       default_hook_timeout_ms: 5_000,
       default_view_timeout_ms: 3_000,
+    },
+  };
+}
+
+function describeHookEvents(events: DescribeHookEvent[]): DescribeHookEvent[] {
+  return (
+    new Extension({
+      name: "hook-describe",
+      version: "0.1.0",
+      subprocess: { command: "./hook-describe" },
+      supported_hook_events: events,
+    }).describe().hook_events ?? []
+  );
+}
+
+function completeHookMatcherFixture(): HookMatcher {
+  return {
+    agent_name: " agent-name ",
+    agent_type: " agent-type ",
+    workspace_id: " workspace-id ",
+    worktree_id: " worktree-id ",
+    workspace_root: " workspace-root ",
+    session_type: " session-type ",
+    sandbox_id: " sandbox-id ",
+    sandbox_backend: " sandbox-backend ",
+    sandbox_profile: " sandbox-profile ",
+    sync_direction: " sync-direction ",
+    input_class: " input-class ",
+    acp_event_type: " acp-event-type ",
+    turn_id: " turn-id ",
+    tool_id: " tool-id ",
+    tool_name: " tool-name ",
+    tool_read_only: false,
+    decision_class: " decision-class ",
+    message_role: " message-role ",
+    message_delta_type: " message-delta-type ",
+    channel: " channel ",
+    surface: " surface ",
+    kind: " kind ",
+    direction: " direction ",
+    work_state: " work-state ",
+    participation_mode: " participation-mode ",
+    participation_source: " participation-source ",
+    compaction_reason: " compaction-reason ",
+    compaction_strategy: " compaction-strategy ",
+    autonomy: {
+      task_id: " task-id ",
+      run_id: " run-id ",
+      loop_run_id: " loop-run-id ",
+      loop_name: " loop-name ",
+      node_id: " node-id ",
+      workflow_id: " workflow-id ",
+      participation_channel: " participation-channel ",
+      coordinator_session_id: " coordinator-session-id ",
+      parent_session_id: " parent-session-id ",
+      root_session_id: " root-session-id ",
+      child_session_id: " child-session-id ",
+      spawn_role: " spawn-role ",
+      release_reason: " release-reason ",
+    },
+  };
+}
+
+function normalizedCompleteHookMatcherFixture(): HookMatcher {
+  return {
+    agent_name: "agent-name",
+    agent_type: "agent-type",
+    workspace_id: "workspace-id",
+    worktree_id: "worktree-id",
+    workspace_root: "workspace-root",
+    session_type: "session-type",
+    sandbox_id: "sandbox-id",
+    sandbox_backend: "sandbox-backend",
+    sandbox_profile: "sandbox-profile",
+    sync_direction: "sync-direction",
+    input_class: "input-class",
+    acp_event_type: "acp-event-type",
+    turn_id: "turn-id",
+    tool_id: "tool-id",
+    tool_name: "tool-name",
+    tool_read_only: false,
+    decision_class: "decision-class",
+    message_role: "message-role",
+    message_delta_type: "message-delta-type",
+    channel: "channel",
+    surface: "surface",
+    kind: "kind",
+    direction: "direction",
+    work_state: "work-state",
+    participation_mode: "participation-mode",
+    participation_source: "participation-source",
+    compaction_reason: "compaction-reason",
+    compaction_strategy: "compaction-strategy",
+    autonomy: {
+      task_id: "task-id",
+      run_id: "run-id",
+      loop_run_id: "loop-run-id",
+      loop_name: "loop-name",
+      node_id: "node-id",
+      workflow_id: "workflow-id",
+      participation_channel: "participation-channel",
+      coordinator_session_id: "coordinator-session-id",
+      parent_session_id: "parent-session-id",
+      root_session_id: "root-session-id",
+      child_session_id: "child-session-id",
+      spawn_role: "spawn-role",
+      release_reason: "release-reason",
     },
   };
 }
@@ -437,6 +545,83 @@ describe("Extension", () => {
       question: "Deploy?",
       choices: ["yes", "no"],
     });
+  });
+
+  it("preserves legacy event-only and detectable invalid optional presence", () => {
+    const hooks = describeHookEvents([
+      { event: "tool.pre_call" },
+      { name: "", event: "tool.pre_call", mode: "" } as unknown as DescribeHookEvent,
+      { name: "   ", event: "tool.pre_call", mode: " \t " } as unknown as DescribeHookEvent,
+    ]);
+
+    expect(hooks).toHaveLength(2);
+    expect(JSON.stringify(hooks[0])).toBe('{"event":"tool.pre_call"}');
+    expect(JSON.stringify(hooks[1])).toBe('{"name":"   ","event":"tool.pre_call","mode":" \\t "}');
+  });
+
+  it("preserves every complete matcher field and same-identity distinctions", () => {
+    const completeMatcher = completeHookMatcherFixture();
+    const base: DescribeHookEvent = {
+      name: " publisher-guard ",
+      event: "tool.pre_call",
+      profile: " delivery ",
+      mode: "sync",
+      matcher: completeMatcher,
+      required: true,
+    };
+    const matcherVariant = structuredClone(completeMatcher);
+    matcherVariant.agent_name = " alternate-agent ";
+    const absentFalseVariant = structuredClone(completeMatcher);
+    delete absentFalseVariant.tool_read_only;
+    const emptyAutonomyVariant = structuredClone(completeMatcher);
+    emptyAutonomyVariant.autonomy = {};
+    const hooks = describeHookEvents([
+      base,
+      structuredClone(base),
+      { ...base, mode: "async" },
+      { ...base, matcher: matcherVariant },
+      { ...base, required: false },
+      { ...base, matcher: absentFalseVariant },
+      { ...base, matcher: emptyAutonomyVariant },
+    ]);
+
+    expect(hooks).toHaveLength(6);
+    expect(hooks.some(hook => hook.mode === "async")).toBe(true);
+    expect(hooks.some(hook => hook.matcher?.agent_name === "alternate-agent")).toBe(true);
+    expect(hooks.some(hook => hook.required === undefined)).toBe(true);
+    expect(
+      hooks.some(hook => hook.matcher !== undefined && !("tool_read_only" in hook.matcher))
+    ).toBe(true);
+    expect(
+      hooks.some(
+        hook =>
+          hook.matcher?.autonomy !== undefined && Object.keys(hook.matcher.autonomy).length === 0
+      )
+    ).toBe(true);
+    const normalized = hooks.find(
+      hook => hook.matcher?.autonomy?.task_id === "task-id" && hook.required === true
+    );
+    expect(normalized?.matcher).toEqual(normalizedCompleteHookMatcherFixture());
+    if (normalized?.matcher?.autonomy) {
+      normalized.matcher.autonomy.task_id = "changed";
+    }
+    expect(completeMatcher.autonomy?.task_id).toBe(" task-id ");
+  });
+
+  it("orders hook declarations by UTF-8 bytes", () => {
+    const names = ["😀-guard", "é-guard", "a-guard", "A-guard", "!-guard", "�-guard"];
+    const hooks = describeHookEvents(
+      names.map(name => ({ name, event: "tool.pre_call" }) satisfies DescribeHookEvent)
+    );
+
+    expect(hooks.map(hook => hook.name)).toEqual([
+      "!-guard",
+      "A-guard",
+      "a-guard",
+      "é-guard",
+      "�-guard",
+      "😀-guard",
+    ]);
   });
 
   it("prints a deterministic describe payload and exits without transport startup", async () => {
