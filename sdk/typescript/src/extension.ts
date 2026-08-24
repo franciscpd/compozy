@@ -261,7 +261,11 @@ export class Extension {
   }
 
   public getSupportedHookEvents(): HookEvent[] {
-    return (this.definition.supported_hook_events ?? []).map(item => item.event);
+    const events = new Set<HookEvent>();
+    for (const item of this.definition.supported_hook_events ?? []) {
+      events.add(item.event.trim() as HookEvent);
+    }
+    return [...events].sort((left, right) => left.localeCompare(right));
   }
 
   public getToolDescriptors(): ExtensionToolRuntimeDescriptor[] {

@@ -31,7 +31,13 @@ import { canonicalJSON, schemaDigest } from "../schema-digest.js";
 import { TestHarness } from "../testing/harness.js";
 import { createMockTransportPair, MockTransport } from "../testing/mock-transport.js";
 import type { TransportHandler } from "../transport.js";
-import type { DescribePayload, InitializeRequest, JSONValue, ViewFrame } from "../types.js";
+import type {
+  DescribeHookEvent,
+  DescribePayload,
+  InitializeRequest,
+  JSONValue,
+  ViewFrame,
+} from "../types.js";
 import {
   VIEW_CLOSE_METHOD,
   VIEW_EVENT_METHOD,
@@ -112,6 +118,10 @@ describe("Extension", () => {
       {
         name: "test-ext",
         version: "0.1.0",
+        supported_hook_events: [
+          { name: "publisher-guard", event: "tool.pre_call" },
+          { name: "audit-guard", event: "tool.pre_call" },
+        ],
         resources: {
           cmd_palette: {
             views: [{ id: "browser", title: "Notes", kind: "list", program: true }],
@@ -127,6 +137,7 @@ describe("Extension", () => {
     await expect(pair.host.call("initialize", initializeFor(extension))).resolves.toMatchObject({
       protocol_version: "1",
       cmd_palette_views: ["browser"],
+      supported_hook_events: ["tool.pre_call"],
     });
     await expect(startPromise).resolves.toBeDefined();
   });
@@ -430,6 +441,42 @@ describe("Extension", () => {
 
   it("prints a deterministic describe payload and exits without transport startup", async () => {
     const harness = new TestHarness();
+    const supportedHookEvents: DescribeHookEvent[] = [
+      {
+        name: " publisher-guard ",
+        event: "tool.pre_call",
+        profile: " delivery ",
+        mode: "sync",
+        matcher: {
+          agent_name: " batuta-publisher ",
+          tool_name: " git.push ",
+          tool_read_only: false,
+          autonomy: { task_id: " task-publish ", spawn_role: " publisher " },
+        },
+        required: true,
+      },
+      {
+        name: " audit-guard ",
+        event: "tool.pre_call",
+        profile: " delivery ",
+        mode: "sync",
+        matcher: { agent_name: " batuta-reviewer " },
+        required: true,
+      },
+      {
+        name: " publisher-guard ",
+        event: "tool.pre_call",
+        profile: " delivery ",
+        mode: "sync",
+        matcher: {
+          agent_name: " batuta-publisher ",
+          tool_name: " git.push ",
+          tool_read_only: false,
+          autonomy: { task_id: " task-publish ", spawn_role: " publisher " },
+        },
+        required: true,
+      },
+    ];
     const extension = new Extension(
       {
         name: "describe-fixture",
@@ -476,7 +523,7 @@ describe("Extension", () => {
             views: [{ id: "browser", title: "Notes", kind: "list", program: true }],
           },
         },
-        supported_hook_events: [{ event: "prompt.post_assemble", profile: "finance" }],
+        supported_hook_events: supportedHookEvents,
       },
       { describeProcess: harness.captureDescribeProcess() }
     );
@@ -505,6 +552,13 @@ describe("Extension", () => {
       ready: false,
       event_key: "reviews:describe",
     }));
+
+    const directPayload = extension.describe();
+    const directAutonomy = directPayload.hook_events?.[1]?.matcher?.autonomy;
+    if (directAutonomy) {
+      directAutonomy.task_id = "changed";
+    }
+    expect(supportedHookEvents[0]?.matcher?.autonomy?.task_id).toBe(" task-publish ");
 
     await expect(extension.start()).resolves.toBeDefined();
     const result = harness.getDescribeResult();
@@ -571,12 +625,42 @@ describe("Extension", () => {
         },
       ],
       command_groups: [{ path: "review", summary: "Review commands" }],
-      hook_events: [{ event: "prompt.post_assemble", profile: "finance" }],
+      hook_events: [
+        {
+          name: "audit-guard",
+          event: "tool.pre_call",
+          profile: "delivery",
+          mode: "sync",
+          matcher: { agent_name: "batuta-reviewer" },
+          required: true,
+        },
+        {
+          name: "publisher-guard",
+          event: "tool.pre_call",
+          profile: "delivery",
+          mode: "sync",
+          matcher: {
+            agent_name: "batuta-publisher",
+            tool_name: "git.push",
+            tool_read_only: false,
+            autonomy: { task_id: "task-publish", spawn_role: "publisher" },
+          },
+          required: true,
+        },
+      ],
       watch_source_kinds: ["reviews"],
       sdk: {
         name: "@compozy/extension-sdk",
         protocol_version: "1",
         min_compozy_version: "0.3.0-beta.1",
+      },
+    });
+    expect(supportedHookEvents[0]).toMatchObject({
+      name: " publisher-guard ",
+      profile: " delivery ",
+      matcher: {
+        agent_name: " batuta-publisher ",
+        autonomy: { task_id: " task-publish ", spawn_role: " publisher " },
       },
     });
   });

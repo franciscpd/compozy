@@ -9,11 +9,13 @@ import (
 	"io"
 	"math"
 	goruntime "runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	compozysdk "github.com/compozy/compozy/sdk/go"
+	"github.com/compozy/compozy/sdk/go/contracts"
 )
 
 func TestStdioTransportBidirectionalCalls(t *testing.T) {
@@ -92,7 +94,10 @@ func testExtensionRuntimeBuiltInAndCustomMethods(t *testing.T) {
 			Permissions: compozysdk.PermissionsConfig{
 				Requires: []compozysdk.HostAPIMethod{compozysdk.HostAPIMethodSessionsList},
 			},
-			SupportedHookEvents: []compozysdk.DescribeHookEvent{{Event: "session.started"}},
+			SupportedHookEvents: []compozysdk.DescribeHookEvent{
+				{Name: "publisher-guard", Event: contracts.HookEventToolPreCall},
+				{Name: "audit-guard", Event: contracts.HookEventToolPreCall},
+			},
 		},
 		compozysdk.WithStdio(runtime.extensionInput, runtime.extensionOutput),
 		compozysdk.WithSDKVersion("test-version"),
@@ -175,8 +180,8 @@ func testExtensionRuntimeBuiltInAndCustomMethods(t *testing.T) {
 	if initResult.ExtensionInfo.SDKVersion != "test-version" {
 		t.Fatalf("sdk version = %q, want test-version", initResult.ExtensionInfo.SDKVersion)
 	}
-	if !contains(initResult.SupportedHookEvents, "session.started") {
-		t.Fatalf("supported hook events = %#v, want session.started", initResult.SupportedHookEvents)
+	if want := []string{string(contracts.HookEventToolPreCall)}; !slices.Equal(initResult.SupportedHookEvents, want) {
+		t.Fatalf("supported hook events = %#v, want %#v", initResult.SupportedHookEvents, want)
 	}
 
 	store := runtime.call(t, 2, "memory/store", map[string]string{"key": "alpha"})
@@ -212,6 +217,86 @@ func testExtensionRuntimeBuiltInAndCustomMethods(t *testing.T) {
 	blocked := runtime.call(t, 5, "memory/recall", map[string]any{})
 	if blocked.Error == nil || blocked.Error.Code != -32004 {
 		t.Fatalf("post-shutdown response error = %#v, want shutdown in progress", blocked.Error)
+	}
+}
+
+func TestExtensionDescribeHookDeclarations(t *testing.T) {
+	t.Parallel()
+	t.Run("Should normalize hook declarations without mutating caller data", testExtensionDescribeHookDeclarations)
+}
+
+func testExtensionDescribeHookDeclarations(t *testing.T) {
+	t.Parallel()
+
+	readOnly := true
+	duplicateReadOnly := true
+	hookEvents := []compozysdk.DescribeHookEvent{
+		{
+			Name: " zeta-guard ", Event: contracts.HookEvent(" automation.job.pre_fire "),
+			Profile: " z-profile ", Mode: contracts.HookMode(" sync "),
+			Matcher: contracts.HookMatcher{
+				AgentName: " batuta-publisher ", ToolReadOnly: &readOnly,
+				Autonomy: &contracts.AutonomyMatcher{TaskID: " task-zeta ", SpawnRole: " publisher "},
+			},
+			Required: true,
+		},
+		{
+			Name: " beta-guard ", Event: contracts.HookEvent(" tool.pre_call "),
+			Profile: " a-profile ", Mode: contracts.HookMode(" sync "),
+			Matcher: contracts.HookMatcher{AgentName: " batuta-publisher "}, Required: true,
+		},
+		{
+			Name: " alpha-guard ", Event: contracts.HookEvent(" tool.pre_call "),
+			Profile: " a-profile ", Mode: contracts.HookMode(" sync "),
+			Matcher: contracts.HookMatcher{AgentName: " batuta-reviewer "}, Required: true,
+		},
+		{
+			Name: " zeta-guard ", Event: contracts.HookEvent(" automation.job.pre_fire "),
+			Profile: " z-profile ", Mode: contracts.HookMode(" sync "),
+			Matcher: contracts.HookMatcher{
+				AgentName: " batuta-publisher ", ToolReadOnly: &duplicateReadOnly,
+				Autonomy: &contracts.AutonomyMatcher{TaskID: " task-zeta ", SpawnRole: " publisher "},
+			},
+			Required: true,
+		},
+	}
+	extension := compozysdk.NewExtension(compozysdk.ExtensionDefinition{
+		Name: "hook-describe", Version: "0.1.0",
+		Subprocess:          compozysdk.DescribeSubprocess{Command: "./hook-describe"},
+		SupportedHookEvents: hookEvents,
+	})
+
+	payload, err := extension.Describe()
+	if err != nil {
+		t.Fatalf("Describe() error = %v", err)
+	}
+	if len(payload.HookEvents) != 3 {
+		t.Fatalf("Describe().HookEvents = %#v, want three unique complete declarations", payload.HookEvents)
+	}
+	wantOrder := []string{"alpha-guard", "beta-guard", "zeta-guard"}
+	for index, wantName := range wantOrder {
+		if payload.HookEvents[index].Name != wantName {
+			t.Fatalf("Describe().HookEvents[%d].Name = %q, want %q", index, payload.HookEvents[index].Name, wantName)
+		}
+	}
+	normalized := payload.HookEvents[2]
+	if normalized.Event != contracts.HookEvent("automation.job.pre_fire") ||
+		normalized.Profile != "z-profile" || normalized.Mode != contracts.HookMode("sync") ||
+		normalized.Matcher.AgentName != "batuta-publisher" || !normalized.Required {
+		t.Fatalf("Describe().HookEvents[2] = %#v, want normalized enriched declaration", normalized)
+	}
+	if normalized.Matcher.ToolReadOnly == nil || !*normalized.Matcher.ToolReadOnly {
+		t.Fatalf("Describe().HookEvents[2].Matcher.ToolReadOnly = %#v, want true", normalized.Matcher.ToolReadOnly)
+	}
+	if normalized.Matcher.Autonomy == nil || normalized.Matcher.Autonomy.TaskID != "task-zeta" ||
+		normalized.Matcher.Autonomy.SpawnRole != "publisher" {
+		t.Fatalf("Describe().HookEvents[2].Matcher.Autonomy = %#v, want normalized nested matcher", normalized.Matcher.Autonomy)
+	}
+	*normalized.Matcher.ToolReadOnly = false
+	normalized.Matcher.Autonomy.TaskID = "changed"
+	if !readOnly || hookEvents[0].Matcher.AgentName != " batuta-publisher " ||
+		hookEvents[0].Matcher.Autonomy.TaskID != " task-zeta " {
+		t.Fatalf("Describe() mutated caller matcher: %#v", hookEvents[0].Matcher)
 	}
 }
 

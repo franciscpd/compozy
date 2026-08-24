@@ -5,6 +5,7 @@ import {
 } from "./extension-contract.js";
 import { normalizeHostMethodList, normalizeStringList } from "./extension-runtime.js";
 import type {
+  AutonomyMatcher,
   CmdPaletteConfig,
   DescribePayload,
   DescribeHookEvent,
@@ -13,6 +14,7 @@ import type {
   ExtensionDefinition,
   ExtensionCommandGroupSpec,
   ExtensionToolRuntimeDescriptor,
+  HookMatcher,
 } from "./types.js";
 import type { RegisteredTool } from "./extension-contract.js";
 
@@ -146,14 +148,119 @@ function normalizeDescribeHookEvents(events: DescribeHookEvent[] | undefined): D
   const unique = new Map<string, DescribeHookEvent>();
   for (const item of events ?? []) {
     const event = item.event.trim() as DescribeHookEvent["event"];
+    const name = item.name?.trim();
     const profile = item.profile?.trim();
-    unique.set(`${event}\u0000${profile ?? ""}`, { event, ...(profile ? { profile } : {}) });
+    const mode = item.mode?.trim() as DescribeHookEvent["mode"];
+    const matcher = item.matcher === undefined ? undefined : cloneDescribeHookMatcher(item.matcher);
+    const normalized: DescribeHookEvent = {
+      ...(name ? { name } : {}),
+      event,
+      ...(profile ? { profile } : {}),
+      ...(mode ? { mode } : {}),
+      ...(matcher !== undefined && Object.keys(matcher).length > 0 ? { matcher } : {}),
+      ...(item.required ? { required: true } : {}),
+    };
+    const key = describeHookEventKey(normalized);
+    if (!unique.has(key)) {
+      unique.set(key, normalized);
+    }
   }
   return [...unique.values()].sort(
     (left, right) =>
+      (left.profile ?? "").localeCompare(right.profile ?? "") ||
       left.event.localeCompare(right.event) ||
-      (left.profile ?? "").localeCompare(right.profile ?? "")
+      (left.name ?? "").localeCompare(right.name ?? "") ||
+      describeHookEventKey(left).localeCompare(describeHookEventKey(right))
   );
+}
+
+type HookMatcherStringKey = Exclude<keyof HookMatcher, "tool_read_only" | "autonomy">;
+
+const HOOK_MATCHER_STRING_KEYS = [
+  "agent_name",
+  "agent_type",
+  "workspace_id",
+  "worktree_id",
+  "workspace_root",
+  "session_type",
+  "sandbox_id",
+  "sandbox_backend",
+  "sandbox_profile",
+  "sync_direction",
+  "input_class",
+  "acp_event_type",
+  "turn_id",
+  "tool_id",
+  "tool_name",
+  "decision_class",
+  "message_role",
+  "message_delta_type",
+  "channel",
+  "surface",
+  "kind",
+  "direction",
+  "work_state",
+  "participation_mode",
+  "participation_source",
+  "compaction_reason",
+  "compaction_strategy",
+] as const satisfies readonly HookMatcherStringKey[];
+
+const AUTONOMY_MATCHER_STRING_KEYS = [
+  "task_id",
+  "run_id",
+  "loop_run_id",
+  "loop_name",
+  "node_id",
+  "workflow_id",
+  "participation_channel",
+  "coordinator_session_id",
+  "parent_session_id",
+  "root_session_id",
+  "child_session_id",
+  "spawn_role",
+  "release_reason",
+] as const satisfies readonly (keyof AutonomyMatcher)[];
+
+function cloneDescribeHookMatcher(matcher: HookMatcher): HookMatcher {
+  const cloned: HookMatcher = {};
+  const target = cloned as Record<HookMatcherStringKey, string | undefined>;
+  for (const key of HOOK_MATCHER_STRING_KEYS) {
+    const value = matcher[key]?.trim();
+    if (value) {
+      target[key] = value;
+    }
+  }
+  if (matcher.tool_read_only !== undefined) {
+    cloned.tool_read_only = matcher.tool_read_only;
+  }
+  if (matcher.autonomy !== undefined) {
+    cloned.autonomy = cloneDescribeAutonomyMatcher(matcher.autonomy);
+  }
+  return cloned;
+}
+
+function cloneDescribeAutonomyMatcher(matcher: AutonomyMatcher): AutonomyMatcher {
+  const cloned: AutonomyMatcher = {};
+  const target = cloned as Record<keyof AutonomyMatcher, string | undefined>;
+  for (const key of AUTONOMY_MATCHER_STRING_KEYS) {
+    const value = matcher[key]?.trim();
+    if (value) {
+      target[key] = value;
+    }
+  }
+  return cloned;
+}
+
+function describeHookEventKey(event: DescribeHookEvent): string {
+  return JSON.stringify([
+    event.profile ?? "",
+    event.event,
+    event.name ?? "",
+    event.mode ?? "",
+    event.matcher ?? {},
+    event.required ?? false,
+  ]);
 }
 
 function normalizeDescribeProfiles(profiles: DescribeProfile[] | undefined): DescribeProfile[] {
