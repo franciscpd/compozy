@@ -15,6 +15,7 @@ import (
 
 	extensioncontract "github.com/compozy/compozy/internal/extension/contract"
 	extensionprotocol "github.com/compozy/compozy/internal/extensionprotocol"
+	hookspkg "github.com/compozy/compozy/internal/hooks"
 	"github.com/compozy/compozy/internal/testutil"
 	toolspkg "github.com/compozy/compozy/internal/tools"
 	"golang.org/x/mod/modfile"
@@ -796,6 +797,232 @@ func TestManifestFromDescribeResources(t *testing.T) {
 			t.Fatalf("NetworkParticipation = %#v, want normalized live gateway scopes", manifest.NetworkParticipation)
 		}
 	})
+}
+
+func TestManifestFromDescribeHooks(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Should preserve scoped required hook declarations and the fixed subprocess", func(t *testing.T) {
+		t.Parallel()
+
+		readOnly := false
+		payload := validDescribePayload()
+		payload.Subprocess = extensioncontract.DescribeSubprocess{
+			Command: " ./bin/publisher ",
+			Args:    []string{"serve", "--stdio"},
+			Env:     map[string]string{"BATUTA_MODE": "delivery"},
+		}
+		payload.HookEvents = []extensioncontract.DescribeHookEvent{{
+			Name: " publisher-guard ", Event: hookspkg.HookToolPreCall, Profile: " delivery ",
+			Mode: hookspkg.HookModeSync, Required: true,
+			Matcher: hookspkg.HookMatcher{
+				AgentName: " batuta-publisher ", WorkspaceID: " workspace-1 ",
+				WorkspaceRoot: " /workspace ", ToolID: " release ", ToolReadOnly: &readOnly,
+			},
+		}}
+
+		manifest, err := manifestFromDescribe(&payload)
+		if err != nil {
+			t.Fatalf("manifestFromDescribe() error = %v", err)
+		}
+		want := []HookConfig{{
+			Profile: "delivery", Name: "publisher-guard", Event: string(hookspkg.HookToolPreCall),
+			Mode: string(hookspkg.HookModeSync), Required: true,
+			Matcher: HookMatcherConfig{
+				AgentName: "batuta-publisher", WorkspaceID: "workspace-1",
+				WorkspaceRoot: "/workspace", ToolID: "release", ToolReadOnly: &readOnly,
+			},
+			Executor: HookExecutorConfig{
+				Kind: describeSubprocessKey, Command: "./bin/publisher",
+				Args: []string{"serve", "--stdio"}, Env: map[string]string{"BATUTA_MODE": "delivery"},
+			},
+		}}
+		if !reflect.DeepEqual(manifest.Resources.Hooks, want) {
+			t.Fatalf("manifest.Resources.Hooks = %#v, want %#v", manifest.Resources.Hooks, want)
+		}
+	})
+
+	t.Run("Should preserve legacy event-only defaults", func(t *testing.T) {
+		t.Parallel()
+
+		payload := validDescribePayload()
+		payload.HookEvents = []extensioncontract.DescribeHookEvent{
+			{Event: hookspkg.HookMessageDelta, Profile: " observation "},
+			{Event: hookspkg.HookToolPreCall},
+		}
+
+		manifest, err := manifestFromDescribe(&payload)
+		if err != nil {
+			t.Fatalf("manifestFromDescribe() error = %v", err)
+		}
+		want := []HookConfig{
+			{
+				Profile: "observation", Name: "message-delta", Event: string(hookspkg.HookMessageDelta),
+				Mode:     string(hookspkg.HookModeAsync),
+				Executor: HookExecutorConfig{Kind: describeSubprocessKey, Command: "./bin"},
+			},
+			{
+				Name: "tool-pre_call", Event: string(hookspkg.HookToolPreCall), Mode: string(hookspkg.HookModeSync),
+				Executor: HookExecutorConfig{Kind: describeSubprocessKey, Command: "./bin"},
+			},
+		}
+		if !reflect.DeepEqual(manifest.Resources.Hooks, want) {
+			t.Fatalf("manifest.Resources.Hooks = %#v, want %#v", manifest.Resources.Hooks, want)
+		}
+	})
+
+	t.Run("Should reject invalid hook declarations", func(t *testing.T) {
+		t.Parallel()
+
+		testCases := []struct {
+			name   string
+			events []extensioncontract.DescribeHookEvent
+		}{
+			{name: "unknown event", events: []extensioncontract.DescribeHookEvent{{Event: "tool.unknown"}}},
+			{
+				name: "required async", events: []extensioncontract.DescribeHookEvent{{
+					Name: "observer", Event: hookspkg.HookMessageDelta, Mode: hookspkg.HookModeAsync, Required: true,
+				}},
+			},
+			{
+				name: "sync mode on async-only event", events: []extensioncontract.DescribeHookEvent{{
+					Name: "observer", Event: hookspkg.HookMessageDelta, Mode: hookspkg.HookModeSync,
+				}},
+			},
+			{
+				name: "invalid mode", events: []extensioncontract.DescribeHookEvent{{
+					Name: "guard", Event: hookspkg.HookToolPreCall, Mode: "later",
+				}},
+			},
+			{
+				name: "unsupported event matcher", events: []extensioncontract.DescribeHookEvent{{
+					Name: "guard", Event: hookspkg.HookToolPreCall, Matcher: hookspkg.HookMatcher{ToolName: "publish"},
+				}},
+			},
+			{
+				name: "whitespace-only name", events: []extensioncontract.DescribeHookEvent{{
+					Name: " \t ", Event: hookspkg.HookToolPreCall,
+				}},
+			},
+			{
+				name: "whitespace-only mode", events: []extensioncontract.DescribeHookEvent{{
+					Name: "guard", Event: hookspkg.HookToolPreCall, Mode: " \t ",
+				}},
+			},
+			{
+				name: "duplicate identity after defaults", events: []extensioncontract.DescribeHookEvent{
+					{Event: hookspkg.HookToolPreCall},
+					{Name: " tool-pre_call ", Event: hookspkg.HookToolPreCall, Profile: " \t "},
+				},
+			},
+		}
+		for _, testCase := range testCases {
+			t.Run(testCase.name, func(t *testing.T) {
+				t.Parallel()
+
+				payload := validDescribePayload()
+				payload.HookEvents = testCase.events
+				if manifest, err := manifestFromDescribe(&payload); err == nil {
+					t.Fatalf("manifestFromDescribe() = %#v, nil; want validation error", manifest)
+				}
+			})
+		}
+	})
+
+	t.Run("Should reject every unrepresentable matcher field", func(t *testing.T) {
+		t.Parallel()
+
+		testCases := []struct {
+			name    string
+			matcher hookspkg.HookMatcher
+		}{
+			{name: "worktree id", matcher: hookspkg.HookMatcher{WorktreeID: "worktree-1"}},
+			{name: "sandbox id", matcher: hookspkg.HookMatcher{SandboxID: "sandbox-1"}},
+			{name: "sandbox backend", matcher: hookspkg.HookMatcher{SandboxBackend: "local"}},
+			{name: "sandbox profile", matcher: hookspkg.HookMatcher{SandboxProfile: "safe"}},
+			{name: "sync direction", matcher: hookspkg.HookMatcher{SyncDirection: "push"}},
+			{
+				name:    "participation mode",
+				matcher: hookspkg.HookMatcher{NetworkMatcher: &hookspkg.NetworkMatcher{ParticipationMode: "live"}},
+			},
+			{
+				name:    "participation source",
+				matcher: hookspkg.HookMatcher{NetworkMatcher: &hookspkg.NetworkMatcher{ParticipationSource: "profile"}},
+			},
+			{name: "present empty autonomy", matcher: hookspkg.HookMatcher{Autonomy: &hookspkg.AutonomyMatcher{}}},
+		}
+		autonomyCases := []struct {
+			name    string
+			matcher hookspkg.AutonomyMatcher
+		}{
+			{name: "task id", matcher: hookspkg.AutonomyMatcher{TaskID: "task-1"}},
+			{name: "run id", matcher: hookspkg.AutonomyMatcher{RunID: "run-1"}},
+			{name: "loop run id", matcher: hookspkg.AutonomyMatcher{LoopRunID: "loop-run-1"}},
+			{name: "loop name", matcher: hookspkg.AutonomyMatcher{LoopName: "delivery"}},
+			{name: "node id", matcher: hookspkg.AutonomyMatcher{NodeID: "publish"}},
+			{name: "workflow id", matcher: hookspkg.AutonomyMatcher{WorkflowID: "workflow-1"}},
+			{name: "participation channel", matcher: hookspkg.AutonomyMatcher{ParticipationChannel: "builders"}},
+			{name: "coordinator session id", matcher: hookspkg.AutonomyMatcher{CoordinatorSessionID: "session-1"}},
+			{name: "parent session id", matcher: hookspkg.AutonomyMatcher{ParentSessionID: "session-parent"}},
+			{name: "root session id", matcher: hookspkg.AutonomyMatcher{RootSessionID: "session-root"}},
+			{name: "child session id", matcher: hookspkg.AutonomyMatcher{ChildSessionID: "session-child"}},
+			{name: "spawn role", matcher: hookspkg.AutonomyMatcher{SpawnRole: "worker"}},
+			{name: "release reason", matcher: hookspkg.AutonomyMatcher{ReleaseReason: "complete"}},
+		}
+		for _, testCase := range autonomyCases {
+			testCases = append(testCases, struct {
+				name    string
+				matcher hookspkg.HookMatcher
+			}{name: "autonomy " + testCase.name, matcher: hookspkg.HookMatcher{Autonomy: &testCase.matcher}})
+		}
+		for _, testCase := range testCases {
+			t.Run(testCase.name, func(t *testing.T) {
+				t.Parallel()
+
+				payload := validDescribePayload()
+				payload.HookEvents = []extensioncontract.DescribeHookEvent{{
+					Name: "guard", Event: hookspkg.HookToolPreCall, Matcher: testCase.matcher,
+				}}
+				if manifest, err := manifestFromDescribe(&payload); err == nil {
+					t.Fatalf("manifestFromDescribe() = %#v, nil; want unrepresentable matcher error", manifest)
+				}
+			})
+		}
+	})
+}
+
+func TestHookMatcherConfigFromHookMatcher(t *testing.T) {
+	t.Parallel()
+
+	readOnly := false
+	matcher := hookspkg.HookMatcher{
+		AgentName: " agent ", AgentType: " publisher ", WorkspaceID: " workspace ",
+		WorkspaceRoot: " /repo ", SessionType: " primary ", InputClass: " prompt ",
+		ACPEventType: " update ", TurnID: " turn ", ToolID: " publish ", ToolName: " release ",
+		ToolReadOnly: &readOnly, DecisionClass: " sensitive ", MessageRole: " assistant ",
+		MessageDeltaType: " text ",
+		NetworkMatcher: &hookspkg.NetworkMatcher{
+			Channel: " builders ", Surface: " task ", Kind: " update ", Direction: " inbound ", WorkState: " active ",
+		},
+		CompactionMatcher: &hookspkg.CompactionMatcher{Reason: " budget ", Strategy: " summarize "},
+	}
+
+	got := hookMatcherConfigFromHookMatcher(matcher)
+	want := HookMatcherConfig{
+		AgentName: "agent", AgentType: "publisher", WorkspaceID: "workspace", WorkspaceRoot: "/repo",
+		SessionType: "primary", InputClass: "prompt", ACPEventType: "update", TurnID: "turn",
+		ToolID: "publish", ToolName: "release", ToolReadOnly: &readOnly, DecisionClass: "sensitive",
+		MessageRole: "assistant", MessageDeltaType: "text", Channel: "builders", Surface: "task",
+		Kind: "update", Direction: "inbound", WorkState: "active", CompactionReason: "budget",
+		CompactionStrategy: "summarize",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("hookMatcherConfigFromHookMatcher() = %#v, want %#v", got, want)
+	}
+	readOnly = true
+	if got.ToolReadOnly == nil || *got.ToolReadOnly {
+		t.Fatalf("converted ToolReadOnly = %#v after caller mutation, want independent false", got.ToolReadOnly)
+	}
 }
 
 func TestValidateBundle(t *testing.T) {

@@ -290,51 +290,103 @@ func manifestHooksFromDescribe(
 	events []extensioncontract.DescribeHookEvent,
 	process extensioncontract.DescribeSubprocess,
 ) ([]HookConfig, error) {
-	normalized := normalizeDescribeHookEvents(events)
-	if len(normalized) == 0 {
+	if len(events) == 0 {
 		return nil, nil
 	}
-	hooks := make([]HookConfig, 0, len(normalized))
-	for _, described := range normalized {
-		event := described.Event
+	hooks := make([]HookConfig, 0, len(events))
+	type hookIdentity struct{ profile, name string }
+	identities := make(map[hookIdentity]int, len(events))
+	for idx, described := range events {
+		event := hookspkg.HookEvent(strings.TrimSpace(string(described.Event)))
 		if err := event.Validate(); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("extension: validate described hook %d event: %w", idx, err)
 		}
-		mode := string(hookspkg.HookModeAsync)
-		if event.SyncEligible() {
-			mode = string(hookspkg.HookModeSync)
+		if described.Name != "" && strings.TrimSpace(described.Name) == "" {
+			return nil, &ManifestValidationError{
+				Field: fmt.Sprintf("hook_events[%d].name", idx), Message: "explicit name must not normalize to empty",
+			}
 		}
-		hooks = append(hooks, HookConfig{
-			Profile: described.Profile,
-			Name:    strings.ReplaceAll(string(described.Event), ".", "-"),
-			Event:   string(described.Event),
-			Mode:    mode,
+		if described.Mode != "" && strings.TrimSpace(string(described.Mode)) == "" {
+			return nil, &ManifestValidationError{
+				Field: fmt.Sprintf("hook_events[%d].mode", idx), Message: "explicit mode must not normalize to empty",
+			}
+		}
+		if err := validateHookMatcherConfigRepresentable(described.Matcher); err != nil {
+			return nil, &ManifestValidationError{
+				Field: fmt.Sprintf("hook_events[%d].matcher", idx), Message: err.Error(),
+			}
+		}
+
+		name := strings.TrimSpace(described.Name)
+		if name == "" {
+			name = strings.ReplaceAll(string(event), ".", "-")
+		}
+		mode := hookspkg.HookMode(strings.TrimSpace(string(described.Mode)))
+		if mode == "" {
+			mode = hookspkg.HookModeAsync
+			if event.SyncEligible() {
+				mode = hookspkg.HookModeSync
+			}
+		}
+
+		executor := HookExecutorConfig{
+			Kind:    describeSubprocessKey,
+			Command: strings.TrimSpace(process.Command),
+			Args:    slices.Clone(process.Args),
+			Env:     cloneStringMap(process.Env),
+		}
+		config := HookConfig{
+			Profile:  strings.TrimSpace(described.Profile),
+			Name:     name,
+			Event:    string(event),
+			Mode:     string(mode),
+			Required: described.Required,
+			Matcher:  hookMatcherConfigFromHookMatcher(described.Matcher),
 			Executor: HookExecutorConfig{
-				Kind:    describeSubprocessKey,
-				Command: strings.TrimSpace(process.Command),
-				Args:    slices.Clone(process.Args),
-				Env:     cloneStringMap(process.Env),
+				Kind: executor.Kind, Command: executor.Command,
+				Args: slices.Clone(executor.Args), Env: cloneStringMap(executor.Env),
 			},
-		})
+		}
+		config = normalizeHooks([]HookConfig{config})[0]
+		// Hook commands and arguments are runtime data, so retain the described
+		// subprocess exactly instead of applying authored-manifest string cleanup.
+		config.Executor = executor
+		if err := validateDescribeHookConfig(config); err != nil {
+			return nil, fmt.Errorf("extension: validate described hook %d (%q): %w", idx, config.Name, err)
+		}
+		identity := hookIdentity{profile: config.Profile, name: config.Name}
+		if previous, exists := identities[identity]; exists {
+			return nil, &ManifestValidationError{
+				Field: fmt.Sprintf("hook_events[%d].name", idx), Value: config.Name,
+				Message: fmt.Sprintf("duplicate hook identity also declared by hook_events[%d]", previous),
+			}
+		}
+		identities[identity] = idx
+		hooks = append(hooks, config)
 	}
+	slices.SortFunc(hooks, func(left, right HookConfig) int {
+		if compared := strings.Compare(left.Event, right.Event); compared != 0 {
+			return compared
+		}
+		if compared := strings.Compare(left.Profile, right.Profile); compared != 0 {
+			return compared
+		}
+		return strings.Compare(left.Name, right.Name)
+	})
 	return hooks, nil
 }
 
-func normalizeDescribeHookEvents(events []extensioncontract.DescribeHookEvent) []extensioncontract.DescribeHookEvent {
-	normalized := make([]extensioncontract.DescribeHookEvent, 0, len(events))
-	for _, event := range events {
-		normalized = append(normalized, extensioncontract.DescribeHookEvent{
-			Event:   hookspkg.HookEvent(strings.TrimSpace(string(event.Event))),
-			Profile: strings.TrimSpace(event.Profile),
-		})
+func validateDescribeHookConfig(config HookConfig) error {
+	executor, err := resolveHookConfigExecutorFields(&config)
+	if err != nil {
+		return err
 	}
-	slices.SortFunc(normalized, func(left, right extensioncontract.DescribeHookEvent) int {
-		if compared := strings.Compare(string(left.Event), string(right.Event)); compared != 0 {
-			return compared
-		}
-		return strings.Compare(left.Profile, right.Profile)
+	return hookspkg.ValidateHookDecl(hookspkg.HookDecl{
+		Name: config.Name, ProfileID: config.Profile, Event: hookspkg.HookEvent(config.Event),
+		Source: hookspkg.HookSourceExtension, Mode: hookspkg.HookMode(config.Mode), Required: config.Required,
+		Matcher: hookConfigMatcher(config.Matcher), ExecutorKind: executor.kind,
+		Command: executor.command, Args: executor.args, Env: executor.env, SecretEnv: executor.secretEnv,
 	})
-	return slices.Compact(normalized)
 }
 
 func sortedBuildStrings(values []string) []string {

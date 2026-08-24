@@ -2,6 +2,7 @@ package extensionpkg
 
 import (
 	"errors"
+	"fmt"
 
 	"slices"
 	"strings"
@@ -78,4 +79,75 @@ func hookConfigMatcher(cfg HookMatcherConfig) hookspkg.HookMatcher {
 		matcher.ToolReadOnly = &value
 	}
 	return matcher
+}
+
+func hookMatcherConfigFromHookMatcher(matcher hookspkg.HookMatcher) HookMatcherConfig {
+	config := HookMatcherConfig{
+		AgentName:        strings.TrimSpace(matcher.AgentName),
+		AgentType:        strings.TrimSpace(matcher.AgentType),
+		WorkspaceID:      strings.TrimSpace(matcher.WorkspaceID),
+		WorkspaceRoot:    strings.TrimSpace(matcher.WorkspaceRoot),
+		SessionType:      strings.TrimSpace(matcher.SessionType),
+		InputClass:       strings.TrimSpace(matcher.InputClass),
+		ACPEventType:     strings.TrimSpace(matcher.ACPEventType),
+		TurnID:           strings.TrimSpace(matcher.TurnID),
+		ToolID:           strings.TrimSpace(matcher.ToolID),
+		ToolName:         strings.TrimSpace(matcher.ToolName),
+		DecisionClass:    strings.TrimSpace(matcher.DecisionClass),
+		MessageRole:      strings.TrimSpace(matcher.MessageRole),
+		MessageDeltaType: strings.TrimSpace(matcher.MessageDeltaType),
+	}
+	if matcher.ToolReadOnly != nil {
+		value := *matcher.ToolReadOnly
+		config.ToolReadOnly = &value
+	}
+	if matcher.NetworkMatcher != nil {
+		config.Channel = strings.TrimSpace(matcher.Channel)
+		config.Surface = strings.TrimSpace(matcher.Surface)
+		config.Kind = strings.TrimSpace(matcher.Kind)
+		config.Direction = strings.TrimSpace(matcher.Direction)
+		config.WorkState = strings.TrimSpace(matcher.WorkState)
+	}
+	if matcher.CompactionMatcher != nil {
+		config.CompactionReason = strings.TrimSpace(matcher.Reason)
+		config.CompactionStrategy = strings.TrimSpace(matcher.Strategy)
+	}
+	return config
+}
+
+func validateHookMatcherConfigRepresentable(matcher hookspkg.HookMatcher) error {
+	fields := make([]string, 0, 8)
+	for _, field := range []struct {
+		name  string
+		value string
+	}{
+		{name: "worktree_id", value: matcher.WorktreeID},
+		{name: "sandbox_id", value: matcher.SandboxID},
+		{name: "sandbox_backend", value: matcher.SandboxBackend},
+		{name: "sandbox_profile", value: matcher.SandboxProfile},
+		{name: "sync_direction", value: matcher.SyncDirection},
+	} {
+		if field.value != "" {
+			fields = append(fields, field.name)
+		}
+	}
+	if matcher.NetworkMatcher != nil {
+		if matcher.ParticipationMode != "" {
+			fields = append(fields, "participation_mode")
+		}
+		if matcher.ParticipationSource != "" {
+			fields = append(fields, "participation_source")
+		}
+	}
+	if matcher.Autonomy != nil {
+		fields = append(fields, "autonomy")
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	slices.Sort(fields)
+	return fmt.Errorf(
+		"hook matcher fields [%s] cannot be represented by an extension manifest",
+		strings.Join(fields, ", "),
+	)
 }
