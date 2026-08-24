@@ -81,8 +81,12 @@ type DeliveryTarget struct {
 type DependencyKind string
 
 type DescribeHookEvent struct {
-	Event   HookEvent `json:"event"`
-	Profile string    `json:"profile,omitempty"`
+	Name     string      `json:"name,omitempty"`
+	Event    HookEvent   `json:"event"`
+	Profile  string      `json:"profile,omitempty"`
+	Mode     HookMode    `json:"mode,omitempty"`
+	Matcher  HookMatcher `json:"matcher,omitzero"`
+	Required bool        `json:"required,omitempty"`
 }
 
 type DescribeNetworkParticipation struct {

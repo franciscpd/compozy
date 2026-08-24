@@ -56,8 +56,12 @@ type DescribeResourcePath struct {
 
 // DescribeHookEvent binds one supported hook event to every profile or one named profile.
 type DescribeHookEvent struct {
-	Event   hookspkg.HookEvent `json:"event"`
-	Profile string             `json:"profile,omitempty"`
+	Name     string               `json:"name,omitempty"`
+	Event    hookspkg.HookEvent   `json:"event"`
+	Profile  string               `json:"profile,omitempty"`
+	Mode     hookspkg.HookMode    `json:"mode,omitempty"`
+	Matcher  hookspkg.HookMatcher `json:"matcher,omitzero"`
+	Required bool                 `json:"required,omitempty"`
 }
 
 // DescribeNetworkParticipation declares the reachability control included in consent digests.

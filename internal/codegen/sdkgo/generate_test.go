@@ -88,4 +88,29 @@ func TestGenerate(t *testing.T) {
 			t.Fatalf("RequiredMethods(unknown.provide) = %v, want nil", got)
 		}
 	})
+
+	t.Run("Should generate the complete optional hook description contract", func(t *testing.T) {
+		t.Parallel()
+
+		result, err := Generate()
+		if err != nil {
+			t.Fatalf("Generate() error = %v", err)
+		}
+
+		var generated []byte
+		for _, name := range result.FileNames() {
+			generated = append(generated, result.Files[name]...)
+		}
+		want := []byte("type DescribeHookEvent struct {\n" +
+			"\tName     string      `json:\"name,omitempty\"`\n" +
+			"\tEvent    HookEvent   `json:\"event\"`\n" +
+			"\tProfile  string      `json:\"profile,omitempty\"`\n" +
+			"\tMode     HookMode    `json:\"mode,omitempty\"`\n" +
+			"\tMatcher  HookMatcher `json:\"matcher,omitzero\"`\n" +
+			"\tRequired bool        `json:\"required,omitempty\"`\n" +
+			"}")
+		if !bytes.Contains(generated, want) {
+			t.Fatalf("Generate() output missing complete DescribeHookEvent contract:\n%s", want)
+		}
+	})
 }

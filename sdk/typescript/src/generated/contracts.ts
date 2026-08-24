@@ -1829,9 +1829,47 @@ export interface ExtensionToolRuntimeDescriptor {
   command?: ExtensionCommandSpec;
 }
 
+export type HookMode = "sync" | "async";
+
+export interface HookMatcher {
+  agent_name?: string;
+  agent_type?: string;
+  workspace_id?: string;
+  worktree_id?: string;
+  workspace_root?: string;
+  session_type?: string;
+  sandbox_id?: string;
+  sandbox_backend?: string;
+  sandbox_profile?: string;
+  sync_direction?: string;
+  input_class?: string;
+  acp_event_type?: string;
+  turn_id?: string;
+  tool_id?: string;
+  tool_name?: string;
+  tool_read_only?: boolean;
+  decision_class?: string;
+  message_role?: string;
+  message_delta_type?: string;
+  channel?: string;
+  surface?: string;
+  kind?: string;
+  direction?: string;
+  work_state?: string;
+  participation_mode?: string;
+  participation_source?: string;
+  compaction_reason?: string;
+  compaction_strategy?: string;
+  autonomy?: AutonomyMatcher;
+}
+
 export interface DescribeHookEvent {
+  name?: string;
   event: HookEvent;
   profile?: string;
+  mode?: HookMode;
+  matcher?: HookMatcher;
+  required?: boolean;
 }
 
 export interface ExtensionCommandGroupSpec {
@@ -2375,40 +2413,6 @@ export interface HeartbeatWakeRequest {
 
 export interface HeartbeatWakeResponse {
   decision: HeartbeatWakeDecisionPayload;
-}
-
-export type HookMode = "sync" | "async";
-
-export interface HookMatcher {
-  agent_name?: string;
-  agent_type?: string;
-  workspace_id?: string;
-  worktree_id?: string;
-  workspace_root?: string;
-  session_type?: string;
-  sandbox_id?: string;
-  sandbox_backend?: string;
-  sandbox_profile?: string;
-  sync_direction?: string;
-  input_class?: string;
-  acp_event_type?: string;
-  turn_id?: string;
-  tool_id?: string;
-  tool_name?: string;
-  tool_read_only?: boolean;
-  decision_class?: string;
-  message_role?: string;
-  message_delta_type?: string;
-  channel?: string;
-  surface?: string;
-  kind?: string;
-  direction?: string;
-  work_state?: string;
-  participation_mode?: string;
-  participation_source?: string;
-  compaction_reason?: string;
-  compaction_strategy?: string;
-  autonomy?: AutonomyMatcher;
 }
 
 export type HookExecutorKind = "native" | "subprocess" | "wasm";

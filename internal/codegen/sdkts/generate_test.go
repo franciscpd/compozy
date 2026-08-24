@@ -100,6 +100,26 @@ func TestGenerateDeterministicAndStructured(t *testing.T) {
 			t.Fatal("Generate() output must not end with multiple trailing newlines")
 		}
 	})
+
+	t.Run("Should generate legacy-compatible hook description fields", func(t *testing.T) {
+		t.Parallel()
+
+		generated, err := Generate()
+		if err != nil {
+			t.Fatalf("Generate() error = %v", err)
+		}
+		want := "export interface DescribeHookEvent {\n" +
+			"  name?: string;\n" +
+			"  event: HookEvent;\n" +
+			"  profile?: string;\n" +
+			"  mode?: HookMode;\n" +
+			"  matcher?: HookMatcher;\n" +
+			"  required?: boolean;\n" +
+			"}"
+		if !strings.Contains(generated, want) {
+			t.Fatalf("Generate() output missing legacy-compatible DescribeHookEvent contract:\n%s", want)
+		}
+	})
 }
 
 func TestGeneratePreservesParticipationDiscriminatedUnions(t *testing.T) {
