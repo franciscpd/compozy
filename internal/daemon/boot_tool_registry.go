@@ -70,16 +70,21 @@ func (d *Daemon) bootToolRegistry(
 	if state.notifier != nil {
 		registryOptions = append(registryOptions, toolspkg.WithHookRunner(state.notifier))
 	}
-	if state.workspaceResolver != nil {
+	if state.registry != nil {
 		registryOptions = append(registryOptions, toolspkg.WithTrustedWorkspaceRootResolver(
 			func(ctx context.Context, workspaceID string) (string, error) {
-				resolved, resolveErr := state.workspaceResolver.Resolve(ctx, workspaceID)
-				if resolveErr != nil {
-					return "", resolveErr
+				canonicalWorkspaceID := strings.TrimSpace(workspaceID)
+				registered, lookupErr := state.registry.GetWorkspace(ctx, canonicalWorkspaceID)
+				if lookupErr != nil {
+					return "", fmt.Errorf(
+						"daemon: look up workspace %q for tool hook context: %w",
+						canonicalWorkspaceID,
+						lookupErr,
+					)
 				}
-				root := strings.TrimSpace(resolved.RootDir)
+				root := strings.TrimSpace(registered.RootDir)
 				if root == "" {
-					return "", fmt.Errorf("daemon: workspace %q has no root directory", workspaceID)
+					return "", fmt.Errorf("daemon: workspace %q has no root directory", canonicalWorkspaceID)
 				}
 				return root, nil
 			},

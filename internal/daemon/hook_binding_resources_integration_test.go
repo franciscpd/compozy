@@ -300,6 +300,56 @@ func TestRuntimeRegistryRequiredToolMatchersUseTrustedContext(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("Should not match caller workspace root without a workspace identity", func(t *testing.T) {
+		hookFailure := errors.New("required matcher hook failed")
+		h := newHookBindingIntegrationHarness(t, map[string]hookspkg.Executor{
+			"workspace-guard": hookspkg.NewTypedNativeExecutor(
+				func(
+					context.Context,
+					hookspkg.RegisteredHook,
+					hookspkg.ToolPreCallPayload,
+				) (hookspkg.ToolCallPatch, error) {
+					return hookspkg.ToolCallPatch{}, hookFailure
+				},
+			),
+		})
+		h.putBinding(t, "workspace-guard", 0, resources.ResourceScope{
+			Kind: resources.ResourceScopeKindUser,
+		}, hookspkg.HookDecl{
+			Name: "workspace-guard", Event: hookspkg.HookToolPreCall,
+			Source: hookspkg.HookSourceNative, Mode: hookspkg.HookModeSync, Required: true,
+			ExecutorKind: hookspkg.HookExecutorNative,
+			Matcher:      hookspkg.HookMatcher{WorkspaceRoot: "/workspace/beta"},
+		})
+		if err := h.driver.RunBoot(testutil.Context(t)); err != nil {
+			t.Fatalf("driver.RunBoot() error = %v", err)
+		}
+
+		protectedTool := newHookProtectedTool()
+		registry, err := toolspkg.NewRegistry(
+			toolspkg.WithProviders(protectedTool),
+			toolspkg.WithPolicyInputs(toolspkg.PolicyInputs{
+				SystemPermissionMode: toolspkg.PermissionModeApproveAll,
+			}, toolspkg.ToolsetCatalog{}),
+			toolspkg.WithHookRunner(h.notifier),
+		)
+		if err != nil {
+			t.Fatalf("tools.NewRegistry() error = %v", err)
+		}
+		_, callErr := registry.Call(testutil.Context(t), toolspkg.Scope{
+			AgentName: "batuta-publisher",
+		}, toolspkg.CallRequest{
+			ToolID: toolspkg.ToolID("protected_publish"), TrustedWorkspaceRoot: "/workspace/beta",
+			Input: json.RawMessage(`{"release":"v1"}`),
+		})
+		if callErr != nil {
+			t.Fatalf("RuntimeRegistry.Call() error = %v, want nil", callErr)
+		}
+		if got := protectedTool.handlerCalls.Load(); got != 1 {
+			t.Fatalf("protected handler calls = %d, want 1", got)
+		}
+	})
 }
 
 func TestHookBindingResourceReconcileFiresToolHookThroughSessionNotifier(t *testing.T) {

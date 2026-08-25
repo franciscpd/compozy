@@ -510,6 +510,145 @@ func TestRuntimeRegistryDispatchApprovalBridge(t *testing.T) {
 func TestRuntimeRegistryDispatchHooksAndErrors(t *testing.T) {
 	t.Parallel()
 
+	t.Run("Should clear caller workspace root when no workspace identity exists", func(t *testing.T) {
+		t.Parallel()
+
+		descriptor := validDispatchDescriptor()
+		rootCalls := 0
+		var hookCall CallRequest
+		registry := mustDispatchRegistry(
+			t,
+			dispatchProviderWithHandle(descriptor, &registryTestHandle{
+				descriptor: descriptor, availability: availableDispatchHandle(),
+			}),
+			WithHookRunner(&recordingHookRunner{
+				pre: func(_ context.Context, call CallRequest) (CallRequest, EffectiveToolDecision, error) {
+					hookCall = call
+					return call, hookAllowedDecision(), nil
+				},
+			}),
+			WithTrustedWorkspaceRootResolver(func(_ context.Context, _ string) (string, error) {
+				rootCalls++
+				return "/workspace/authoritative", nil
+			}),
+		)
+
+		_, err := registry.Call(t.Context(), Scope{}, CallRequest{
+			ToolID: descriptor.ID, TrustedWorkspaceRoot: "/caller/spoof",
+			Input: json.RawMessage(`{"query":"x"}`),
+		})
+		if err != nil {
+			t.Fatalf("RuntimeRegistry.Call() error = %v, want nil", err)
+		}
+		if rootCalls != 0 {
+			t.Fatalf("workspace root resolver calls = %d, want 0", rootCalls)
+		}
+		if hookCall.TrustedWorkspaceRoot != "" {
+			t.Fatalf("hook workspace root = %q, want empty", hookCall.TrustedWorkspaceRoot)
+		}
+	})
+
+	t.Run("Should clear caller workspace root when no authoritative resolver exists", func(t *testing.T) {
+		t.Parallel()
+
+		descriptor := validDispatchDescriptor()
+		var hookCall CallRequest
+		registry := mustDispatchRegistry(
+			t,
+			dispatchProviderWithHandle(descriptor, &registryTestHandle{
+				descriptor: descriptor, availability: availableDispatchHandle(),
+			}),
+			WithHookRunner(&recordingHookRunner{
+				pre: func(_ context.Context, call CallRequest) (CallRequest, EffectiveToolDecision, error) {
+					hookCall = call
+					return call, hookAllowedDecision(), nil
+				},
+			}),
+		)
+
+		_, err := registry.Call(t.Context(), Scope{WorkspaceID: "ws-alpha"}, CallRequest{
+			ToolID: descriptor.ID, TrustedWorkspaceRoot: "/caller/spoof",
+			Input: json.RawMessage(`{"query":"x"}`),
+		})
+		if err != nil {
+			t.Fatalf("RuntimeRegistry.Call() error = %v, want nil", err)
+		}
+		if hookCall.TrustedWorkspaceRoot != "" {
+			t.Fatalf("hook workspace root = %q, want empty", hookCall.TrustedWorkspaceRoot)
+		}
+	})
+
+	t.Run("Should fail closed when authoritative workspace root lookup fails", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name    string
+			resolve TrustedWorkspaceRootResolver
+			wantErr error
+			want    ReasonCode
+		}{
+			{
+				name: "unknown workspace",
+				resolve: func(context.Context, string) (string, error) {
+					return "", errors.New("workspace not found")
+				},
+				wantErr: ErrToolDenied, want: ReasonWorkspaceAccessDenied,
+			},
+			{
+				name: "empty registered root",
+				resolve: func(context.Context, string) (string, error) {
+					return "", nil
+				},
+				wantErr: ErrToolDenied, want: ReasonWorkspaceAccessDenied,
+			},
+			{
+				name: "canceled lookup",
+				resolve: func(context.Context, string) (string, error) {
+					return "", context.Canceled
+				},
+				wantErr: ErrToolCanceled, want: ReasonCallCanceled,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				descriptor := validDispatchDescriptor()
+				handlerCalls := 0
+				hookCalls := 0
+				registry := mustDispatchRegistry(
+					t,
+					dispatchProviderWithHandle(descriptor, &registryTestHandle{
+						descriptor: descriptor, availability: availableDispatchHandle(),
+						call: func(context.Context, CallRequest) (ToolResult, error) {
+							handlerCalls++
+							return ToolResult{}, nil
+						},
+					}),
+					WithHookRunner(&recordingHookRunner{
+						pre: func(_ context.Context, call CallRequest) (CallRequest, EffectiveToolDecision, error) {
+							hookCalls++
+							return call, hookAllowedDecision(), nil
+						},
+					}),
+					WithTrustedWorkspaceRootResolver(tt.resolve),
+				)
+
+				_, err := registry.Call(t.Context(), Scope{WorkspaceID: "ws-alpha"}, CallRequest{
+					ToolID: descriptor.ID, TrustedWorkspaceRoot: "/caller/spoof",
+					Input: json.RawMessage(`{"query":"x"}`),
+				})
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("RuntimeRegistry.Call() error = %v, want %v", err, tt.wantErr)
+				}
+				requireToolReason(t, err, tt.want)
+				if hookCalls != 0 || handlerCalls != 0 {
+					t.Fatalf("hook/handler calls = %d/%d, want 0/0", hookCalls, handlerCalls)
+				}
+			})
+		}
+	})
+
 	t.Run("Should preserve trusted matcher context through every hook phase", func(t *testing.T) {
 		t.Parallel()
 

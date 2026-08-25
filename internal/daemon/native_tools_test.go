@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -10708,10 +10709,14 @@ func TestDaemonBootToolRegistry(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("InsertWorkspace() error = %v", err)
 		}
+		var workspaceResolveLogs bytes.Buffer
 		workspaceResolver, err := workspacepkg.NewResolver(
 			registryStore,
 			workspacepkg.WithHomePaths(homePaths),
-			workspacepkg.WithLogger(discardLogger()),
+			workspacepkg.WithLogger(slog.New(slog.NewTextHandler(
+				&workspaceResolveLogs,
+				&slog.HandlerOptions{Level: slog.LevelDebug},
+			))),
 			workspacepkg.WithConfigLoader(func(rootDir string) (compozyconfig.Config, error) {
 				return compozyconfig.LoadForHome(homePaths, compozyconfig.WithWorkspaceRoot(rootDir))
 			}),
@@ -10789,6 +10794,9 @@ func TestDaemonBootToolRegistry(t *testing.T) {
 		}
 		if hookCalls != 1 {
 			t.Fatalf("tool hook calls = %d, want 1", hookCalls)
+		}
+		if got := strings.Count(workspaceResolveLogs.String(), "msg=workspace.resolve "); got != 1 {
+			t.Fatalf("workspace resolves = %d, want 1 policy resolution without a second root scan", got)
 		}
 	})
 }

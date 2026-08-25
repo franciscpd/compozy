@@ -88,12 +88,15 @@ func (r *RuntimeRegistry) enrichTrustedWorkspaceRoot(
 	ctx context.Context,
 	req CallRequest,
 ) (CallRequest, error) {
-	req.TrustedWorkspaceRoot = strings.TrimSpace(req.TrustedWorkspaceRoot)
+	req.TrustedWorkspaceRoot = ""
 	workspaceID := strings.TrimSpace(req.WorkspaceID)
 	if workspaceID == "" || r == nil || r.workspaceRootResolver == nil {
 		return req, nil
 	}
 	root, err := r.workspaceRootResolver(ctx, workspaceID)
+	if contextError := contextErrFromError(req.ToolID, err); contextError != nil {
+		return CallRequest{}, contextError
+	}
 	root = strings.TrimSpace(root)
 	if err != nil || root == "" {
 		return CallRequest{}, workspaceAccessDeniedError(req.ToolID)
