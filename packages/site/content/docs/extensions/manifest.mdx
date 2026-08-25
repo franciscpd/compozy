@@ -286,21 +286,41 @@ examples.
 
 ### `[[resources.hooks]]`
 
-Hooks declared through the SDK's supported hook events are generated with a subprocess executor
-pointed at the same binary. Hooks require a supported code toolchain; resource-only sources cannot
-declare executable hooks:
+Hooks declared through the SDK's supported hook events retain their normalized policy and are
+generated with the extension's fixed subprocess executor. Hooks require a supported code toolchain;
+resource-only sources cannot declare executable hooks:
 
 ```toml
 [[resources.hooks]]
-name = "review-session-ready"
-event = "session.post_create"
-mode = "async"
-command = "/usr/bin/env"
-args = ["bash", "{{config_dir}}/hooks/session-ready.sh"]
+name = "batuta-publisher-tool-guard"
+event = "tool.pre_call"
+mode = "sync"
+required = true
+
+[resources.hooks.matcher]
+agent_name = "batuta-publisher"
+
+[resources.hooks.executor]
+kind = "subprocess"
+command = "./bin/batuta-hooks"
+args = ["serve", "--stdio"]
+
+[resources.hooks.executor.env]
+BATUTA_MODE = "delivery"
 ```
 
-Extension hooks carry source `extension` and default priority `300`. See
-[Hook Declaration Format](/docs/hooks/declaration).
+The executor command, arguments, and environment are copied from `[subprocess]`; a code-first hook
+cannot override them independently. Event-only SDK declarations remain valid and default to the
+event-derived name, eligible mode, empty matcher, and `required = false` (which is omitted from the
+generated TOML). Invalid event/mode/matcher combinations, required non-sync hooks, duplicate
+normalized identities, whitespace-only explicit names or modes, and matcher fields the manifest
+cannot preserve fail the build rather than losing policy.
+
+Extension hooks carry source `extension` and default priority `300`. A matched required synchronous
+`tool.pre_call` failure blocks production `tools.RuntimeRegistry` admission before the protected
+handler runs; a non-match does not. See [Develop Extensions](/docs/extensions/develop#declare-a-scoped-required-hook)
+for exact Go and TypeScript declarations and [Hook Declaration Format](/docs/hooks/declaration) for
+the complete manifest matcher grammar.
 
 ### `[resources.publish]`
 

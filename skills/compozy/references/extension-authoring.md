@@ -10,6 +10,7 @@ reload semantics, logs, install trust, publish credentials — live in
 - Code-first model
 - Templates
 - Declaration shape
+- Scoped required hooks
 - Ready callback lifecycle
 - Permissions and consent
 - Provide surfaces
@@ -82,6 +83,87 @@ of each is computed by the SDK and re-verified by the daemon.
 
 Registration closes at `initialize`. Register every tool, hook, watch source, and command group
 before `Run`/`start`.
+
+## Scoped Required Hooks
+
+Declare a synchronous required `tool.pre_call` hook in the same extension definition as its fixed
+subprocess. Go:
+
+```go
+extension := compozysdk.NewExtension(compozysdk.ExtensionDefinition{
+	Name:    "batuta-hooks",
+	Version: "0.1.0",
+	Subprocess: compozysdk.DescribeSubprocess{
+		Command: "./bin/batuta-hooks",
+		Args:    []string{"serve", "--stdio"},
+		Env:     map[string]string{"BATUTA_MODE": "delivery"},
+	},
+	SupportedHookEvents: []compozysdk.DescribeHookEvent{{
+		Name:     "batuta-publisher-tool-guard",
+		Event:    contracts.HookEventToolPreCall,
+		Mode:     contracts.HookMode("sync"),
+		Matcher:  contracts.HookMatcher{AgentName: "batuta-publisher"},
+		Required: true,
+	}},
+})
+```
+
+TypeScript:
+
+```ts
+const extension = new Extension({
+  name: "batuta-hooks",
+  version: "0.1.0",
+  subprocess: {
+    command: "./bin/batuta-hooks",
+    args: ["serve", "--stdio"],
+    env: { BATUTA_MODE: "delivery" },
+  },
+  supported_hook_events: [
+    {
+      name: "batuta-publisher-tool-guard",
+      event: "tool.pre_call",
+      mode: "sync",
+      matcher: { agent_name: "batuta-publisher" },
+      required: true,
+    },
+  ],
+});
+```
+
+`build` trims represented strings, deep-copies matcher state, sorts declarations by profile, event,
+and name, and removes only identical complete duplicates. The initialize handshake independently
+advertises each event name once. The legacy event-only form remains valid:
+
+```go
+SupportedHookEvents: []compozysdk.DescribeHookEvent{{Event: contracts.HookEventToolPreCall}}
+```
+
+```ts
+supported_hook_events: [{ event: "tool.pre_call" }];
+```
+
+For an event-only declaration, `build` derives the name by replacing event dots with hyphens, uses
+sync mode when the event is sync-eligible and async mode otherwise, leaves the matcher empty, and
+sets `required` to false. Exact empty `name` and `mode` values have the same semantics as omission;
+a detectable non-empty whitespace-only value is invalid instead of being defaulted.
+
+Build validation rejects an unknown event, an unsupported event/mode or event/matcher combination,
+`required: true` unless the effective mode is sync, and duplicate normalized `(profile, name)`
+identities. Matcher data is lossless only for fields represented by the extension manifest. A
+nonzero `worktree_id`, `sandbox_id`, `sandbox_backend`, `sandbox_profile`, `sync_direction`,
+`participation_mode`, `participation_source`, or `autonomy` matcher is rejected rather than dropped.
+
+Every generated hook reuses the extension subprocess `command`, `args`, and `env` exactly. A
+code-first hook cannot select a hook-specific command, executor kind, or persistent SDK method; the
+persistent extension protocol has no generic hook-handler service. The fixed command must recognize
+the one-shot hook payload mode as well as any persistent extension mode it serves.
+
+Required synchronous hooks fail closed at the real tool boundary. `tools.RuntimeRegistry` runs
+`tool.pre_call` admission before the protected handler; a matched required error, timeout, malformed
+response, unavailable subprocess, or explicit denial prevents the handler from running. A
+non-matching call proceeds normally. Agent identity, tool read-only state, and workspace root used by
+matchers come from trusted runtime owners, not tool input.
 
 ## Ready Callback Lifecycle
 

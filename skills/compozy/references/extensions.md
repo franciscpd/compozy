@@ -224,6 +224,19 @@ Hooks are typed dispatch at the owning state transition. They are not a generic 
 
 Hooks may deny, narrow, annotate, or observe. They must not bypass safety primitives such as claim tokens, leases, TTL, lineage, spawn caps, or permission narrowing.
 
+Code-first Go and TypeScript declarations may preserve `name`, `event`, optional `profile`, `mode`,
+manifest-representable `matcher`, and `required` in the generated immutable manifest. Event-only
+declarations remain compatible and default to the event-derived name, an eligible mode, empty
+matcher, and optional behavior. Read `references/extension-authoring.md#scoped-required-hooks` for
+exact declarations, validation, and the fields deliberately rejected instead of being dropped.
+
+Generated hooks always use the described extension subprocess command, arguments, and environment;
+there is no per-hook executor override or general persistent SDK hook-handler protocol. A required
+synchronous `tool.pre_call` failure is admission, not observation: the production
+`tools.RuntimeRegistry` rejects the matched call before the tool handler runs. Non-matching calls are
+unaffected. Treat errors, timeouts, malformed output, unavailable subprocesses, and explicit denials
+as intentional fail-closed outcomes for required hooks.
+
 Skill-declared hooks are part of the skill contract. Keep hook declarations structured and validated, not buried in prose.
 
 Manage hooks with `compozy__hooks_*` (list/info/events/runs/create/update/delete/enable/disable). Hook families are documented beside their domain: `loop.*` in `references/loops.md`, `network.participation.*` in `references/network.md`, and `window_manager.*` in `references/window-management.md`.

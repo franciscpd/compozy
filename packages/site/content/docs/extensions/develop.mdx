@@ -92,6 +92,75 @@ that a hand-written manifest allowed cannot occur.
 
 Registering a tool adds `tool.provider` to `capabilities.provides` automatically.
 
+### Declare a scoped required hook
+
+A code-first hook carries its policy in `supported_hook_events`. This Go declaration blocks a
+matched publisher tool call when the one-shot hook subprocess fails:
+
+```go
+extension := compozysdk.NewExtension(compozysdk.ExtensionDefinition{
+	Name:    "batuta-hooks",
+	Version: "0.1.0",
+	Subprocess: compozysdk.DescribeSubprocess{
+		Command: "./bin/batuta-hooks",
+		Args:    []string{"serve", "--stdio"},
+		Env:     map[string]string{"BATUTA_MODE": "delivery"},
+	},
+	SupportedHookEvents: []compozysdk.DescribeHookEvent{{
+		Name:     "batuta-publisher-tool-guard",
+		Event:    contracts.HookEventToolPreCall,
+		Mode:     contracts.HookMode("sync"),
+		Matcher:  contracts.HookMatcher{AgentName: "batuta-publisher"},
+		Required: true,
+	}},
+})
+```
+
+The equivalent TypeScript definition is:
+
+```ts
+const extension = new Extension({
+  name: "batuta-hooks",
+  version: "0.1.0",
+  subprocess: {
+    command: "./bin/batuta-hooks",
+    args: ["serve", "--stdio"],
+    env: { BATUTA_MODE: "delivery" },
+  },
+  supported_hook_events: [
+    {
+      name: "batuta-publisher-tool-guard",
+      event: "tool.pre_call",
+      mode: "sync",
+      matcher: { agent_name: "batuta-publisher" },
+      required: true,
+    },
+  ],
+});
+```
+
+The compatible event-only forms are
+`compozysdk.DescribeHookEvent{Event: contracts.HookEventToolPreCall}` in Go and
+`{ event: "tool.pre_call" }` in TypeScript. They derive the name from the event, use sync mode for
+a sync-eligible event and async mode otherwise, have an empty matcher, and are not required. Exact
+empty `name` and `mode` values mean absent; whitespace-only authored values are rejected.
+
+Build trims and clones represented matcher data, sorts declarations deterministically, advertises
+each initialize event once, and removes only identical complete declarations. It rejects unknown
+events, unsupported mode/event and matcher/event combinations, required non-sync hooks, duplicate
+normalized profile/name identities, and any matcher state that the generated manifest cannot retain.
+Current non-representable fields are `worktree_id`, `sandbox_id`, `sandbox_backend`,
+`sandbox_profile`, `sync_direction`, `participation_mode`, `participation_source`, and `autonomy`;
+they fail the build instead of disappearing from policy.
+
+Every generated hook uses the extension subprocess `command`, `args`, and `env` exactly. There is no
+hook-specific executor override and no generic hook method on the persistent extension protocol, so
+the fixed command must recognize one-shot hook payloads. A required synchronous `tool.pre_call` runs
+through `tools.RuntimeRegistry` before the protected handler. A matched error, timeout, malformed
+response, unavailable subprocess, or explicit denial blocks the call; a non-matching call proceeds.
+Matcher agent, read-only, and workspace context comes from trusted runtime state rather than tool
+input.
+
 ## Start from a resource-only manifest
 
 A resource-only source has no `package.json` or `go.mod`. Write `extension.toml` and declare at least
