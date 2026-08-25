@@ -66,6 +66,9 @@ func (d *Daemon) bootToolRegistry(
 			state.toolArtifacts,
 		)),
 	}
+	if state.notifier != nil {
+		registryOptions = append(registryOptions, toolspkg.WithHookRunner(state.notifier))
+	}
 	if state.toolProjectionEpoch != nil {
 		registryOptions = append(
 			registryOptions,

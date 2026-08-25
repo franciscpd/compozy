@@ -10701,10 +10701,24 @@ func TestDaemonBootToolRegistry(t *testing.T) {
 		homePaths := testHomePaths(t)
 		cfg := testConfig(t, homePaths)
 		skillsRegistry := newLoadedNativeSkillRegistry(t)
+		hookFailure := errors.New("required tool hook failure")
+		hookCalls := 0
+		notifier := newHooksNotifier(discardLogger(), nil)
+		notifier.setRuntime(&fakeHookRuntime{onToolPreCall: func(
+			_ context.Context,
+			payload hookspkg.ToolPreCallPayload,
+		) error {
+			hookCalls++
+			if payload.ToolID != toolspkg.ToolIDToolList.String() {
+				t.Fatalf("tool hook payload.ToolID = %q, want %q", payload.ToolID, toolspkg.ToolIDToolList)
+			}
+			return hookFailure
+		}}, nil)
 		state := &bootState{
 			cfg:            cfg,
 			registry:       &recordingRegistry{},
 			skillsRegistry: skillsRegistry,
+			notifier:       notifier,
 			deps: RuntimeDeps{
 				SkillsRegistry: skillsRegistry,
 				Network:        &nativeNetworkStub{},
@@ -10741,6 +10755,16 @@ func TestDaemonBootToolRegistry(t *testing.T) {
 		_, err = state.deps.ToolRegistry.Get(t.Context(), toolspkg.Scope{Operator: true}, "compozy__skill_remove")
 		if !errors.Is(err, toolspkg.ErrToolNotFound) {
 			t.Fatalf("ToolRegistry.Get(skill_remove) error = %v, want ErrToolNotFound", err)
+		}
+		_, err = state.deps.ToolRegistry.Call(t.Context(), toolspkg.Scope{Operator: true}, toolspkg.CallRequest{
+			ToolID: toolspkg.ToolIDToolList,
+			Input:  json.RawMessage(`{}`),
+		})
+		if !errors.Is(err, toolspkg.ErrToolDenied) || !errors.Is(err, hookFailure) {
+			t.Fatalf("ToolRegistry.Call(tool_list) error = %v, want hook denial", err)
+		}
+		if hookCalls != 1 {
+			t.Fatalf("tool hook calls = %d, want 1", hookCalls)
 		}
 	})
 }
