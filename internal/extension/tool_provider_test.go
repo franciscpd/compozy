@@ -1117,16 +1117,31 @@ func TestExtensionToolProviderDispatch(t *testing.T) {
 			fixture.manifest.Name,
 			[]toolspkg.ExtensionToolRuntimeDescriptor{descriptor.RuntimeDescriptor},
 		)
-		registry := newExtensionToolRegistry(t, env.registry, runtime, extensionToolPolicyAllowAll())
+		var resolvedWorkspaceIDs []string
+		registry := newExtensionToolRegistryWithOptions(
+			t,
+			env.registry,
+			runtime,
+			extensionToolPolicyAllowAll(),
+			[]toolspkg.RegistryOption{
+				toolspkg.WithTrustedWorkspaceRootResolver(func(_ context.Context, workspaceID string) (string, error) {
+					resolvedWorkspaceIDs = append(resolvedWorkspaceIDs, workspaceID)
+					return "/trusted/workspace", nil
+				}),
+			},
+		)
 		scope := toolspkg.Scope{SessionID: "session-1", WorkspaceID: "workspace-identity"}
 		_, err := registry.Call(testutil.Context(t), scope, toolspkg.CallRequest{
 			ToolID:               descriptor.Tool.ID,
 			WorkspaceID:          scope.WorkspaceID,
-			TrustedWorkspaceRoot: "/trusted/workspace",
+			TrustedWorkspaceRoot: "/caller/spoof",
 			Input:                json.RawMessage(`{"query":"alpha"}`),
 		})
 		if err != nil {
 			t.Fatalf("Registry.Call() error = %v", err)
+		}
+		if got, want := resolvedWorkspaceIDs, []string{"workspace-identity"}; !slices.Equal(got, want) {
+			t.Fatalf("resolved workspace IDs = %#v, want %#v", got, want)
 		}
 		if len(runtime.calls) != 1 || runtime.calls[0].TrustedWorkspace == nil {
 			t.Fatalf("runtime calls = %#v, want trusted workspace context", runtime.calls)
@@ -1514,6 +1529,25 @@ func newExtensionToolRegistry(
 	providerOpts ...ExtensionToolProviderOption,
 ) *toolspkg.RuntimeRegistry {
 	t.Helper()
+	return newExtensionToolRegistryWithOptions(
+		t,
+		extensionRegistry,
+		runtime,
+		policyInputs,
+		nil,
+		providerOpts...,
+	)
+}
+
+func newExtensionToolRegistryWithOptions(
+	t *testing.T,
+	extensionRegistry *Registry,
+	runtime ExtensionToolRuntime,
+	policyInputs toolspkg.PolicyInputs,
+	registryOpts []toolspkg.RegistryOption,
+	providerOpts ...ExtensionToolProviderOption,
+) *toolspkg.RuntimeRegistry {
+	t.Helper()
 
 	provider, err := NewExtensionToolProvider(extensionRegistry, func() ExtensionToolRuntime {
 		return runtime
@@ -1521,10 +1555,11 @@ func newExtensionToolRegistry(
 	if err != nil {
 		t.Fatalf("NewExtensionToolProvider() error = %v", err)
 	}
-	registry, err := toolspkg.NewRegistry(
+	registryOpts = append(registryOpts,
 		toolspkg.WithProviders(provider),
 		toolspkg.WithPolicyInputs(policyInputs, toolspkg.ToolsetCatalog{}),
 	)
+	registry, err := toolspkg.NewRegistry(registryOpts...)
 	if err != nil {
 		t.Fatalf("toolspkg.NewRegistry() error = %v", err)
 	}
