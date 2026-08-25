@@ -355,9 +355,10 @@ type nativeLoopRunsInput struct {
 }
 
 type nativeLoopConfigureInput struct {
-	WorkspaceID string             `json:"workspace,omitempty"`
-	Name        string             `json:"name"`
-	Config      looppkg.LoopConfig `json:"config"`
+	WorkspaceID      string             `json:"workspace,omitempty"`
+	Name             string             `json:"name"`
+	Config           looppkg.LoopConfig `json:"config"`
+	ExpectedRevision *int64             `json:"expected_revision,omitempty"`
 }
 
 type nativeLoopApproveInput struct {

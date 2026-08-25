@@ -198,6 +198,7 @@ func putLoopConfigOperation() OperationSpec {
 		[]ResponseSpec{
 			ok(contract.LoopConfigResponse{}),
 			badRequest(),
+			configRevisionConflict(),
 			notFound(specLoopDefinition404),
 			loopUnavailable(),
 			internalError(),
@@ -451,6 +452,14 @@ func conflict() ResponseSpec {
 
 func versionConflict() ResponseSpec {
 	return ResponseSpec{Status: 409, Description: "Loop version conflict", Body: contract.LoopVersionConflictResponse{}}
+}
+
+func configRevisionConflict() ResponseSpec {
+	return ResponseSpec{
+		Status:      409,
+		Description: "Loop config revision conflict",
+		Body:        contract.LoopConfigRevisionConflictResponse{},
+	}
 }
 
 func lintFailed() ResponseSpec {

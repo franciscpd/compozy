@@ -167,32 +167,6 @@ func loopConfigFromGenerated(row sqlcgen.GetLoopConfigRow) (looppkg.LoopConfig, 
 	}.toConfig()
 }
 
-func loopConfigPatchParams(
-	insert sqlcgen.InsertLoopConfigIfMissingParams,
-	patch loopConfigPatchFlags,
-) sqlcgen.PatchLoopConfigParams {
-	return sqlcgen.PatchLoopConfigParams{
-		PatchHumanGate: int64(boolToInt(patch.HumanGate)), HumanGateEnabled: insert.HumanGateEnabled,
-		PatchReattempt: loopPatchStringFlag(patch.Reattempt), ReattemptStrategy: insert.ReattemptStrategy,
-		PatchEnabledChecks: map[bool]string{false: "0", true: "1"}[patch.EnabledChecks],
-		EnabledChecksJson:  insert.EnabledChecksJson, PatchIterationCap: loopPatchIntFlag(patch.IterationCap),
-		IterationCap: insert.IterationCap, PatchBudgetTokens: loopPatchIntFlag(patch.BudgetTokens),
-		BudgetTokens: insert.BudgetTokens, PatchBudgetWallSec: loopPatchIntFlag(patch.BudgetWallSec),
-		BudgetWallSec: insert.BudgetWallSec, PatchBudgetOnExceeded: loopPatchStringFlag(patch.BudgetOnExceeded),
-		BudgetOnExceeded: insert.BudgetOnExceeded, PatchNoProgressWindow: loopPatchIntFlag(patch.NoProgressWindow),
-		NoProgressWindow: insert.NoProgressWindow, PatchFanOutWidth: loopPatchIntFlag(patch.FanOutWidth),
-		FanOutWidth: insert.FanOutWidth, PatchGateMaxRevisions: loopPatchIntFlag(patch.GateMaxRevisions),
-		GateMaxRevisions:     insert.GateMaxRevisions,
-		PatchRuntimeDefaults: loopPatchStringFlag(patch.RuntimeDefaults),
-		RuntimeDefaultsJson:  insert.RuntimeDefaultsJson,
-		PatchRuntimeRules:    loopPatchStringFlag(patch.RuntimeRules),
-		RuntimeRulesJson:     insert.RuntimeRulesJson,
-		PatchEnvironment:     loopPatchStringFlag(patch.Environment),
-		EnvironmentJson:      insert.EnvironmentJson,
-		WorkspaceID:          insert.WorkspaceID, LoopName: insert.LoopName,
-	}
-}
-
 func nullableLoopTime(value time.Time) sql.NullTime {
 	return sql.NullTime{Time: value.UTC(), Valid: !value.IsZero()}
 }
@@ -203,15 +177,4 @@ func loopTimePointer(value sql.NullTime) *time.Time {
 	}
 	normalized := value.Time.UTC()
 	return &normalized
-}
-
-func loopPatchIntFlag(value bool) sql.NullInt64 {
-	return sql.NullInt64{Int64: int64(boolToInt(value)), Valid: true}
-}
-
-func loopPatchStringFlag(value bool) sql.NullString {
-	if value {
-		return sql.NullString{String: "1", Valid: true}
-	}
-	return sql.NullString{String: "0", Valid: true}
 }

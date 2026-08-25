@@ -261,11 +261,20 @@ type LoopPlanNodePreview struct {
 type LoopConfigResponse struct {
 	Config          *LoopConfig         `json:"config"`
 	EffectiveConfig LoopEffectiveConfig `json:"effective_config"`
+	ConfigRevision  int64               `json:"config_revision"`
 }
 
 // PutLoopConfigRequest replaces the stored no-fork config override.
 type PutLoopConfigRequest struct {
-	Config LoopConfig `json:"config"`
+	Config           LoopConfig `json:"config"`
+	ExpectedRevision *int64     `json:"expected_revision,omitempty"`
+}
+
+// LoopConfigRevisionConflictResponse reports both sides of a failed config CAS.
+type LoopConfigRevisionConflictResponse struct {
+	Error            string `json:"error"`
+	ExpectedRevision int64  `json:"expected_revision"`
+	CurrentRevision  int64  `json:"current_revision"`
 }
 
 // LoopEnvironmentMode selects the execution root for Loop agent actions.

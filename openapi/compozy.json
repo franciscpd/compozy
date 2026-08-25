@@ -281013,6 +281013,10 @@
                       },
                       "type": "object"
                     },
+                    "config_revision": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
                     "effective_config": {
                       "properties": {
                         "budget_on_exceeded": {
@@ -281236,6 +281240,7 @@
                   },
                   "required": [
                     "config",
+                    "config_revision",
                     "effective_config"
                   ],
                   "type": "object"
@@ -281749,6 +281754,11 @@
                       }
                     },
                     "type": "object"
+                  },
+                  "expected_revision": {
+                    "format": "int64",
+                    "nullable": true,
+                    "type": "integer"
                   }
                 },
                 "required": [
@@ -281936,6 +281946,10 @@
                         }
                       },
                       "type": "object"
+                    },
+                    "config_revision": {
+                      "format": "int64",
+                      "type": "integer"
                     },
                     "effective_config": {
                       "properties": {
@@ -282160,6 +282174,7 @@
                   },
                   "required": [
                     "config",
+                    "config_revision",
                     "effective_config"
                   ],
                   "type": "object"
@@ -282313,6 +282328,34 @@
               }
             },
             "description": "Loop definition not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "current_revision": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "expected_revision": {
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "current_revision",
+                    "error",
+                    "expected_revision"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Loop config revision conflict"
           },
           "500": {
             "content": {

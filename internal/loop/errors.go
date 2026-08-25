@@ -16,6 +16,10 @@ var (
 	ErrRunNotFound = errors.New("loop: run not found")
 	// ErrConfigNotFound reports the absence of a per-loop loop_config row.
 	ErrConfigNotFound = errors.New("loop: config not found")
+	// ErrConfigRevisionConflict reports a stale loop configuration compare-and-swap.
+	ErrConfigRevisionConflict = errors.New("loop: config revision conflict")
+	// ErrConfigRevisionStoreUnavailable reports a service missing the revisioned config seam.
+	ErrConfigRevisionStoreUnavailable = errors.New("loop: config revision store unavailable")
 	// ErrOutputRefNotFound reports a missing content-addressed loop output payload.
 	ErrOutputRefNotFound = errors.New("loop: output ref not found")
 	// ErrInvalidTransition reports an illegal status transition.
@@ -29,6 +33,25 @@ var (
 	// ErrStaleGenerationOutput reports an output write fenced by a newer cell epoch.
 	ErrStaleGenerationOutput = errors.New("loop: stale generation output")
 )
+
+// ConfigRevisionConflictError reports the requested and current configuration revisions.
+type ConfigRevisionConflictError struct {
+	Expected int64
+	Current  int64
+}
+
+// Error implements error.
+func (e *ConfigRevisionConflictError) Error() string {
+	if e == nil {
+		return ErrConfigRevisionConflict.Error()
+	}
+	return fmt.Sprintf("%s: expected %d, current %d", ErrConfigRevisionConflict, e.Expected, e.Current)
+}
+
+// Unwrap preserves errors.Is compatibility with ErrConfigRevisionConflict.
+func (e *ConfigRevisionConflictError) Unwrap() error {
+	return ErrConfigRevisionConflict
+}
 
 // ReasonCode is the deterministic machine-readable failure code surfaced to agents.
 type ReasonCode string

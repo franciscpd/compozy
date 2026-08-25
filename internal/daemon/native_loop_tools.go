@@ -321,6 +321,12 @@ func (n *daemonNativeTools) loopConfigure(
 	if err := decodeNativeLoopInput(req, &input); err != nil {
 		return toolspkg.ToolResult{}, err
 	}
+	if input.ExpectedRevision != nil && *input.ExpectedRevision < 0 {
+		return toolspkg.ToolResult{}, nativeLoopToolError(
+			req.ToolID,
+			fmt.Errorf("%w: expected_revision must be non-negative", looppkg.ErrValidation),
+		)
+	}
 	workspaceID, name, err := n.nativeLoopWorkspaceAndName(ctx, req.ToolID, input.WorkspaceID, input.Name, scope)
 	if err != nil {
 		return toolspkg.ToolResult{}, err
@@ -331,7 +337,8 @@ func (n *daemonNativeTools) loopConfigure(
 	}
 	response, err := n.loopService().
 		PutLoopConfig(ctx, workspaceID, scope.ProfileID, name, contract.PutLoopConfigRequest{
-			Config: *config,
+			Config:           *config,
+			ExpectedRevision: input.ExpectedRevision,
 		})
 	if err != nil {
 		return toolspkg.ToolResult{}, nativeLoopToolError(req.ToolID, err)

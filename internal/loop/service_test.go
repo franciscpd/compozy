@@ -1767,9 +1767,73 @@ func TestServiceConfigMethodsShouldReadWriteRawOverrides(t *testing.T) {
 			*snapshot.Stored.FanOutWidth != 500 {
 			t.Fatalf("stored config = %#v, want preserved override", snapshot.Stored)
 		}
+		if snapshot.Revision != 1 {
+			t.Fatalf("snapshot revision = %d, want 1", snapshot.Revision)
+		}
 		if snapshot.Effective.FanOutWidth != 500 ||
 			snapshot.Effective.GateMaxRevisions != 10 {
 			t.Fatalf("effective config = %#v, want stored fan-out and delivery gate default", snapshot.Effective)
+		}
+	})
+
+	t.Run("Should expose revision zero for an absent config without persisting", func(t *testing.T) {
+		t.Parallel()
+
+		store := newFakeLoopStore()
+		svc := newTestService(t, store, validDefinition())
+		snapshot, err := svc.GetConfigSnapshot(
+			context.Background(), "ws-1", storepkg.DefaultProfileID, "valid-loop",
+		)
+		if err != nil {
+			t.Fatalf("GetConfigSnapshot() error = %v", err)
+		}
+		if snapshot.Stored != nil || snapshot.Revision != 0 {
+			t.Fatalf("snapshot = %#v, want absent config at revision 0", snapshot)
+		}
+		if len(store.configs) != 0 {
+			t.Fatalf("stored configs = %d, want no read side effect", len(store.configs))
+		}
+	})
+
+	t.Run("Should configure with an expected revision and reject negative values before the store", func(t *testing.T) {
+		t.Parallel()
+
+		store := newFakeLoopStore()
+		svc := newTestService(t, store, validDefinition())
+		revisionService, ok := svc.(loop.LoopConfigRevisionService)
+		if !ok {
+			t.Fatal("service does not implement LoopConfigRevisionService")
+		}
+		expected := int64(0)
+		snapshot, err := revisionService.ConfigureWithRevision(
+			context.Background(),
+			"ws-1",
+			storepkg.DefaultProfileID,
+			"valid-loop",
+			loop.LoopConfig{BudgetTokens: new(1000)},
+			&expected,
+		)
+		if err != nil {
+			t.Fatalf("ConfigureWithRevision() error = %v", err)
+		}
+		if snapshot.Revision != 1 || snapshot.Stored == nil || snapshot.Stored.BudgetTokens == nil {
+			t.Fatalf("snapshot = %#v, want stored config at revision 1", snapshot)
+		}
+
+		negative := int64(-1)
+		_, err = revisionService.ConfigureWithRevision(
+			context.Background(),
+			"ws-1",
+			storepkg.DefaultProfileID,
+			"valid-loop",
+			loop.LoopConfig{},
+			&negative,
+		)
+		if !errors.Is(err, loop.ErrValidation) {
+			t.Fatalf("ConfigureWithRevision(negative) error = %v, want ErrValidation", err)
+		}
+		if store.compareAndSwapConfigCalls != 1 {
+			t.Fatalf("CAS calls = %d, want 1", store.compareAndSwapConfigCalls)
 		}
 	})
 
@@ -3847,6 +3911,8 @@ type fakeLoopStore struct {
 	mu                               sync.Mutex
 	runs                             map[loop.RunID]loop.Run
 	configs                          map[string]loop.LoopConfig
+	configRevisions                  map[string]int64
+	compareAndSwapConfigCalls        int
 	snapshots                        map[string]loop.DefinitionSnapshot
 	decisions                        map[string]map[string]gate.HumanDecision
 	transitions                      []fakeTransition
@@ -4044,6 +4110,7 @@ func newFakeLoopStore() *fakeLoopStore {
 	return &fakeLoopStore{
 		runs:              map[loop.RunID]loop.Run{},
 		configs:           map[string]loop.LoopConfig{},
+		configRevisions:   map[string]int64{},
 		snapshots:         map[string]loop.DefinitionSnapshot{},
 		decisions:         map[string]map[string]gate.HumanDecision{},
 		generationOutputs: map[loop.RunID][]loop.GenerationOutput{},
@@ -4681,8 +4748,49 @@ func (s *fakeLoopStore) UpsertLoopConfig(
 ) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.configs[string(ws)+"/"+loopName] = cfg
+	key := string(ws) + "/" + loopName
+	s.configs[key] = cfg
+	s.configRevisions[key]++
 	return nil
+}
+
+func (s *fakeLoopStore) GetStoredLoopConfigSnapshot(
+	_ context.Context,
+	ws loop.WorkspaceID,
+	loopName string,
+) (loop.StoredLoopConfigSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := string(ws) + "/" + loopName
+	cfg, ok := s.configs[key]
+	if !ok {
+		return loop.StoredLoopConfigSnapshot{}, nil
+	}
+	return loop.StoredLoopConfigSnapshot{Config: &cfg, Revision: s.configRevisions[key]}, nil
+}
+
+func (s *fakeLoopStore) CompareAndSwapLoopConfig(
+	_ context.Context,
+	ws loop.WorkspaceID,
+	loopName string,
+	expectedRevision int64,
+	cfg loop.LoopConfig,
+) (loop.StoredLoopConfigSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.compareAndSwapConfigCalls++
+	key := string(ws) + "/" + loopName
+	current := s.configRevisions[key]
+	if expectedRevision != current {
+		return loop.StoredLoopConfigSnapshot{}, &loop.ConfigRevisionConflictError{
+			Expected: expectedRevision,
+			Current:  current,
+		}
+	}
+	s.configs[key] = cfg
+	s.configRevisions[key] = current + 1
+	stored := cfg
+	return loop.StoredLoopConfigSnapshot{Config: &stored, Revision: current + 1}, nil
 }
 
 func (s *fakeLoopStore) GetLoopConfig(

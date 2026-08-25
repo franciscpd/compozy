@@ -194,6 +194,13 @@ type EffectiveConfig struct {
 type ConfigSnapshot struct {
 	Stored    *LoopConfig
 	Effective EffectiveConfig
+	Revision  int64
+}
+
+// StoredLoopConfigSnapshot is the atomic persistence view used for revisioned configuration writes.
+type StoredLoopConfigSnapshot struct {
+	Config   *LoopConfig
+	Revision int64
 }
 
 // LoopDefaults carries the `[loops.defaults.*]` layer consumed by the resolver.
@@ -356,6 +363,22 @@ type Store interface {
 	GetLoopConfig(ctx context.Context, ws WorkspaceID, loopName string) (*LoopConfig, error)
 }
 
+// LoopConfigRevisionStore is the narrow optional persistence seam for revisioned configuration.
+type LoopConfigRevisionStore interface {
+	GetStoredLoopConfigSnapshot(
+		ctx context.Context,
+		ws WorkspaceID,
+		loopName string,
+	) (StoredLoopConfigSnapshot, error)
+	CompareAndSwapLoopConfig(
+		ctx context.Context,
+		ws WorkspaceID,
+		loopName string,
+		expectedRevision int64,
+		cfg LoopConfig,
+	) (StoredLoopConfigSnapshot, error)
+}
+
 // Service is the task_04 loop aggregate API surface.
 type Service interface {
 	Start(ctx context.Context, ws WorkspaceID, name string, inputs Inputs, actor task.ActorContext) (*Run, error)
@@ -423,6 +446,18 @@ type Service interface {
 	GetConfigSnapshot(ctx context.Context, ws WorkspaceID, profileID string, name string) (ConfigSnapshot, error)
 	Get(ctx context.Context, ws WorkspaceID, runID RunID) (*Run, error)
 	Transition(ctx context.Context, runID RunID, to Status, cause TransitionCause) error
+}
+
+// LoopConfigRevisionService is the narrow optional service seam for revisioned config writes.
+type LoopConfigRevisionService interface {
+	ConfigureWithRevision(
+		ctx context.Context,
+		ws WorkspaceID,
+		profileID string,
+		name string,
+		cfg LoopConfig,
+		expectedRevision *int64,
+	) (ConfigSnapshot, error)
 }
 
 // TimeTravelService exposes the optional historical read and mutation surface.

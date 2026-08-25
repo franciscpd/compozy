@@ -70,42 +70,44 @@ WHERE id = sqlc.arg(id) AND workspace_id = sqlc.arg(workspace_id) AND goal_clear
 SELECT workspace_id, state, creation_profile_ref, policy_spec_digest, creation_digest
 FROM sessions WHERE id = sqlc.arg(session_id);
 
--- name: InsertLoopConfigIfMissing :exec
-INSERT OR IGNORE INTO loop_config (
+-- name: InsertLoopConfig :exec
+INSERT INTO loop_config (
   workspace_id, loop_name, human_gate_enabled, reattempt_strategy, enabled_checks_json,
   iteration_cap, budget_tokens, budget_wall_sec, budget_on_exceeded,
   no_progress_window, fan_out_width, gate_max_revisions,
-  runtime_defaults_json, runtime_rules_json, environment_json
+  runtime_defaults_json, runtime_rules_json, environment_json, revision
 ) VALUES (
   sqlc.arg(workspace_id), sqlc.arg(loop_name), sqlc.arg(human_gate_enabled),
   sqlc.narg(reattempt_strategy), sqlc.arg(enabled_checks_json), sqlc.narg(iteration_cap),
   sqlc.narg(budget_tokens), sqlc.narg(budget_wall_sec), sqlc.narg(budget_on_exceeded),
   sqlc.narg(no_progress_window), sqlc.narg(fan_out_width), sqlc.narg(gate_max_revisions),
-  sqlc.narg(runtime_defaults_json), sqlc.narg(runtime_rules_json), sqlc.narg(environment_json)
+  sqlc.narg(runtime_defaults_json), sqlc.narg(runtime_rules_json), sqlc.narg(environment_json),
+  sqlc.arg(revision)
 );
 
--- name: PatchLoopConfig :exec
+-- name: ReplaceLoopConfig :exec
 UPDATE loop_config SET
-  human_gate_enabled = CASE WHEN sqlc.arg(patch_human_gate) THEN sqlc.arg(human_gate_enabled) ELSE human_gate_enabled END,
-  reattempt_strategy = CASE WHEN sqlc.arg(patch_reattempt) THEN sqlc.narg(reattempt_strategy) ELSE reattempt_strategy END,
-  enabled_checks_json = CASE WHEN sqlc.arg(patch_enabled_checks) THEN sqlc.arg(enabled_checks_json) ELSE enabled_checks_json END,
-  iteration_cap = CASE WHEN sqlc.arg(patch_iteration_cap) THEN sqlc.narg(iteration_cap) ELSE iteration_cap END,
-  budget_tokens = CASE WHEN sqlc.arg(patch_budget_tokens) THEN sqlc.narg(budget_tokens) ELSE budget_tokens END,
-  budget_wall_sec = CASE WHEN sqlc.arg(patch_budget_wall_sec) THEN sqlc.narg(budget_wall_sec) ELSE budget_wall_sec END,
-  budget_on_exceeded = CASE WHEN sqlc.arg(patch_budget_on_exceeded) THEN sqlc.narg(budget_on_exceeded) ELSE budget_on_exceeded END,
-  no_progress_window = CASE WHEN sqlc.arg(patch_no_progress_window) THEN sqlc.narg(no_progress_window) ELSE no_progress_window END,
-  fan_out_width = CASE WHEN sqlc.arg(patch_fan_out_width) THEN sqlc.narg(fan_out_width) ELSE fan_out_width END,
-  gate_max_revisions = CASE WHEN sqlc.arg(patch_gate_max_revisions) THEN sqlc.narg(gate_max_revisions) ELSE gate_max_revisions END,
-  runtime_defaults_json = CASE WHEN sqlc.arg(patch_runtime_defaults) THEN sqlc.narg(runtime_defaults_json) ELSE runtime_defaults_json END,
-  runtime_rules_json = CASE WHEN sqlc.arg(patch_runtime_rules) THEN sqlc.narg(runtime_rules_json) ELSE runtime_rules_json END,
-  environment_json = CASE WHEN sqlc.arg(patch_environment) THEN sqlc.narg(environment_json) ELSE environment_json END
+  human_gate_enabled = sqlc.arg(human_gate_enabled),
+  reattempt_strategy = sqlc.narg(reattempt_strategy),
+  enabled_checks_json = sqlc.arg(enabled_checks_json),
+  iteration_cap = sqlc.narg(iteration_cap),
+  budget_tokens = sqlc.narg(budget_tokens),
+  budget_wall_sec = sqlc.narg(budget_wall_sec),
+  budget_on_exceeded = sqlc.narg(budget_on_exceeded),
+  no_progress_window = sqlc.narg(no_progress_window),
+  fan_out_width = sqlc.narg(fan_out_width),
+  gate_max_revisions = sqlc.narg(gate_max_revisions),
+  runtime_defaults_json = sqlc.narg(runtime_defaults_json),
+  runtime_rules_json = sqlc.narg(runtime_rules_json),
+  environment_json = sqlc.narg(environment_json),
+  revision = sqlc.arg(revision)
 WHERE workspace_id = sqlc.arg(workspace_id) AND loop_name = sqlc.arg(loop_name);
 
 -- name: GetLoopConfig :one
 SELECT human_gate_enabled, reattempt_strategy, enabled_checks_json,
        iteration_cap, budget_tokens, budget_wall_sec, budget_on_exceeded,
        no_progress_window, fan_out_width, gate_max_revisions,
-       runtime_defaults_json, runtime_rules_json, environment_json
+       runtime_defaults_json, runtime_rules_json, environment_json, revision
 FROM loop_config WHERE workspace_id = sqlc.arg(workspace_id) AND loop_name = sqlc.arg(loop_name);
 
 -- name: DeleteLoopConfig :exec

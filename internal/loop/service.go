@@ -176,22 +176,54 @@ func (s *service) Configure(
 	name string,
 	cfg LoopConfig,
 ) error {
-	_, loopName, err := s.resolveDefinition(ctx, ws, profileID, name)
+	_, err := s.ConfigureWithRevision(ctx, ws, profileID, name, cfg, nil)
+	return err
+}
+
+// ConfigureWithRevision applies a loop configuration patch, optionally guarded by an atomic revision check.
+func (s *service) ConfigureWithRevision(
+	ctx context.Context,
+	ws WorkspaceID,
+	profileID string,
+	name string,
+	cfg LoopConfig,
+	expectedRevision *int64,
+) (ConfigSnapshot, error) {
+	if expectedRevision != nil && *expectedRevision < 0 {
+		return ConfigSnapshot{}, fmt.Errorf("%w: expected_revision must be non-negative", ErrValidation)
+	}
+	resolved, loopName, err := s.resolveDefinition(ctx, ws, profileID, name)
 	if err != nil {
-		return err
+		return ConfigSnapshot{}, err
 	}
 	clamped := ClampLoopConfig(cfg)
 	if err := validateConfigJSON(clamped); err != nil {
-		return err
+		return ConfigSnapshot{}, err
 	}
 	catalog, err := s.runtimeCatalogForWorkspace(ctx, ws)
 	if err != nil {
-		return err
+		return ConfigSnapshot{}, err
 	}
 	if err := ValidateLoopConfigRuntime(ctx, catalog, clamped); err != nil {
-		return err
+		return ConfigSnapshot{}, err
 	}
-	return s.store.UpsertLoopConfig(ctx, ws, loopName, clamped)
+	revisionStore, ok := s.store.(LoopConfigRevisionStore)
+	if !ok {
+		return ConfigSnapshot{}, ErrConfigRevisionStoreUnavailable
+	}
+	var stored StoredLoopConfigSnapshot
+	if expectedRevision == nil {
+		if err := s.store.UpsertLoopConfig(ctx, ws, loopName, clamped); err != nil {
+			return ConfigSnapshot{}, err
+		}
+		stored, err = revisionStore.GetStoredLoopConfigSnapshot(ctx, ws, loopName)
+	} else {
+		stored, err = revisionStore.CompareAndSwapLoopConfig(ctx, ws, loopName, *expectedRevision, clamped)
+	}
+	if err != nil {
+		return ConfigSnapshot{}, err
+	}
+	return s.resolveConfigSnapshot(ctx, ws, resolved, stored)
 }
 
 func (s *service) GetConfig(ctx context.Context, ws WorkspaceID, name string) (*LoopConfig, error) {
@@ -212,18 +244,28 @@ func (s *service) GetConfigSnapshot(
 	if err != nil {
 		return ConfigSnapshot{}, err
 	}
-	stored, err := s.store.GetLoopConfig(ctx, ws, loopName)
-	if err != nil && !errors.Is(err, ErrConfigNotFound) {
+	revisionStore, ok := s.store.(LoopConfigRevisionStore)
+	if !ok {
+		return ConfigSnapshot{}, ErrConfigRevisionStoreUnavailable
+	}
+	stored, err := revisionStore.GetStoredLoopConfigSnapshot(ctx, ws, loopName)
+	if err != nil {
 		return ConfigSnapshot{}, err
 	}
-	if errors.Is(err, ErrConfigNotFound) {
-		stored = nil
-	}
+	return s.resolveConfigSnapshot(ctx, ws, resolved, stored)
+}
+
+func (s *service) resolveConfigSnapshot(
+	ctx context.Context,
+	ws WorkspaceID,
+	resolved *ResolvedDefinition,
+	stored StoredLoopConfigSnapshot,
+) (ConfigSnapshot, error) {
 	defaults, err := s.resolveDefaults(ctx, ws)
 	if err != nil {
 		return ConfigSnapshot{}, fmt.Errorf("resolve loop defaults: %w", err)
 	}
-	effective, err := ResolveEffectiveConfig(resolved, defaults, stored, LoopConfig{})
+	effective, err := ResolveEffectiveConfig(resolved, defaults, stored.Config, LoopConfig{})
 	if err != nil {
 		return ConfigSnapshot{}, err
 	}
@@ -234,7 +276,7 @@ func (s *service) GetConfigSnapshot(
 	if err := ValidateEffectiveRuntime(ctx, catalog, effective); err != nil {
 		return ConfigSnapshot{}, err
 	}
-	return ConfigSnapshot{Stored: stored, Effective: effective}, nil
+	return ConfigSnapshot{Stored: stored.Config, Effective: effective, Revision: stored.Revision}, nil
 }
 
 func (s *service) Get(ctx context.Context, ws WorkspaceID, runID RunID) (*Run, error) {

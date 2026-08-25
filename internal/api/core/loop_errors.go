@@ -58,6 +58,7 @@ func StatusForLoopError(err error) int {
 	case errors.As(err, &inputValidationErr):
 		return http.StatusUnprocessableEntity
 	case errors.Is(err, ErrLoopVersionConflict),
+		errors.Is(err, looppkg.ErrConfigRevisionConflict),
 		errors.Is(err, looppkg.ErrConcurrencyConflict),
 		errors.Is(err, looppkg.ErrTransitionConflict),
 		errors.Is(err, looppkg.ErrDefinitionExists),

@@ -4614,6 +4614,215 @@ func TestValidateLoopCoordinatorReactivation(t *testing.T) {
 func TestGlobalDBLoopConfigShouldPersistOverrides(t *testing.T) {
 	t.Parallel()
 
+	t.Run("Should keep revision zero reads side effect free", func(t *testing.T) {
+		t.Parallel()
+
+		globalDB := openLoopTestGlobalDB(t)
+		ctx := testutil.Context(t)
+		first, err := globalDB.GetStoredLoopConfigSnapshot(ctx, "ws-1", "delivery")
+		if err != nil {
+			t.Fatalf("GetStoredLoopConfigSnapshot(first) error = %v", err)
+		}
+		second, err := globalDB.GetStoredLoopConfigSnapshot(ctx, "ws-1", "delivery")
+		if err != nil {
+			t.Fatalf("GetStoredLoopConfigSnapshot(second) error = %v", err)
+		}
+		if first.Config != nil || first.Revision != 0 || second.Config != nil || second.Revision != 0 {
+			t.Fatalf("snapshots = %#v then %#v, want nil config at revision 0", first, second)
+		}
+		if _, err := globalDB.GetLoopConfig(ctx, "ws-1", "delivery"); !errors.Is(err, looppkg.ErrConfigNotFound) {
+			t.Fatalf("GetLoopConfig(after reads) error = %v, want ErrConfigNotFound", err)
+		}
+	})
+
+	t.Run("Should compare and swap patches with monotonic revisions", func(t *testing.T) {
+		t.Parallel()
+
+		globalDB := openLoopTestGlobalDB(t)
+		ctx := testutil.Context(t)
+		inserted, err := globalDB.CompareAndSwapLoopConfig(
+			ctx,
+			"ws-1",
+			"delivery",
+			0,
+			looppkg.LoopConfig{BudgetTokens: new(1000)},
+		)
+		if err != nil {
+			t.Fatalf("CompareAndSwapLoopConfig(insert) error = %v", err)
+		}
+		if inserted.Revision != 1 || inserted.Config == nil ||
+			inserted.Config.BudgetTokens == nil || *inserted.Config.BudgetTokens != 1000 {
+			t.Fatalf("inserted snapshot = %#v, want budget 1000 at revision 1", inserted)
+		}
+
+		updated, err := globalDB.CompareAndSwapLoopConfig(
+			ctx,
+			"ws-1",
+			"delivery",
+			1,
+			looppkg.LoopConfig{FanOutWidth: new(5)},
+		)
+		if err != nil {
+			t.Fatalf("CompareAndSwapLoopConfig(update) error = %v", err)
+		}
+		if updated.Revision != 2 || updated.Config == nil ||
+			updated.Config.BudgetTokens == nil || *updated.Config.BudgetTokens != 1000 ||
+			updated.Config.FanOutWidth == nil || *updated.Config.FanOutWidth != 5 {
+			t.Fatalf("updated snapshot = %#v, want preserved budget and fan-out at revision 2", updated)
+		}
+
+		_, err = globalDB.CompareAndSwapLoopConfig(
+			ctx,
+			"ws-1",
+			"delivery",
+			1,
+			looppkg.LoopConfig{BudgetTokens: new(2000)},
+		)
+		var conflict *looppkg.ConfigRevisionConflictError
+		if !errors.As(err, &conflict) || conflict.Expected != 1 || conflict.Current != 2 {
+			t.Fatalf("CompareAndSwapLoopConfig(stale) error = %v, want expected 1 current 2", err)
+		}
+
+		unchanged, err := globalDB.CompareAndSwapLoopConfig(
+			ctx,
+			"ws-1",
+			"delivery",
+			2,
+			looppkg.LoopConfig{FanOutWidth: new(5)},
+		)
+		if err != nil {
+			t.Fatalf("CompareAndSwapLoopConfig(unchanged) error = %v", err)
+		}
+		if unchanged.Revision != 2 {
+			t.Fatalf("unchanged revision = %d, want 2", unchanged.Revision)
+		}
+		checksAdded, err := globalDB.CompareAndSwapLoopConfig(
+			ctx,
+			"ws-1",
+			"delivery",
+			2,
+			looppkg.LoopConfig{EnabledChecks: []byte(`{"project":{"enabled":true}}`)},
+		)
+		if err != nil {
+			t.Fatalf("CompareAndSwapLoopConfig(checks) error = %v", err)
+		}
+		semanticNoOp, err := globalDB.CompareAndSwapLoopConfig(
+			ctx,
+			"ws-1",
+			"delivery",
+			checksAdded.Revision,
+			looppkg.LoopConfig{EnabledChecks: []byte(`{ "project": { "enabled": true } }`)},
+		)
+		if err != nil {
+			t.Fatalf("CompareAndSwapLoopConfig(semantic no-op) error = %v", err)
+		}
+		if semanticNoOp.Revision != checksAdded.Revision {
+			t.Fatalf("semantic no-op revision = %d, want %d", semanticNoOp.Revision, checksAdded.Revision)
+		}
+
+		if err := globalDB.UpsertLoopConfig(
+			ctx,
+			"ws-1",
+			"delivery",
+			looppkg.LoopConfig{BudgetTokens: new(2000)},
+		); err != nil {
+			t.Fatalf("UpsertLoopConfig(legacy patch) error = %v", err)
+		}
+		legacy, err := globalDB.GetStoredLoopConfigSnapshot(ctx, "ws-1", "delivery")
+		if err != nil {
+			t.Fatalf("GetStoredLoopConfigSnapshot(legacy) error = %v", err)
+		}
+		if legacy.Revision != 4 || legacy.Config == nil || legacy.Config.FanOutWidth == nil ||
+			*legacy.Config.FanOutWidth != 5 || legacy.Config.BudgetTokens == nil || *legacy.Config.BudgetTokens != 2000 {
+			t.Fatalf("legacy snapshot = %#v, want preserved fan-out and budget 2000 at revision 4", legacy)
+		}
+	})
+
+	t.Run("Should roll back invalid and failed config mutations", func(t *testing.T) {
+		t.Parallel()
+
+		globalDB := openLoopTestGlobalDB(t)
+		ctx := testutil.Context(t)
+		initial, err := globalDB.CompareAndSwapLoopConfig(
+			ctx, "ws-1", "delivery", 0, looppkg.LoopConfig{BudgetTokens: new(1000)},
+		)
+		if err != nil {
+			t.Fatalf("CompareAndSwapLoopConfig(initial) error = %v", err)
+		}
+		_, err = globalDB.CompareAndSwapLoopConfig(
+			ctx, "ws-1", "delivery", initial.Revision, looppkg.LoopConfig{EnabledChecks: []byte(`{`)},
+		)
+		if !errors.Is(err, looppkg.ErrValidation) {
+			t.Fatalf("CompareAndSwapLoopConfig(invalid) error = %v, want ErrValidation", err)
+		}
+		if _, err := globalDB.db.ExecContext(ctx, `CREATE TRIGGER reject_loop_config_update
+			BEFORE UPDATE ON loop_config BEGIN SELECT RAISE(ABORT, 'forced config storage failure'); END`); err != nil {
+			t.Fatalf("create failure trigger error = %v", err)
+		}
+		_, err = globalDB.CompareAndSwapLoopConfig(
+			ctx, "ws-1", "delivery", initial.Revision, looppkg.LoopConfig{FanOutWidth: new(4)},
+		)
+		if err == nil || !strings.Contains(err.Error(), "forced config storage failure") {
+			t.Fatalf("CompareAndSwapLoopConfig(storage failure) error = %v", err)
+		}
+		stored, err := globalDB.GetStoredLoopConfigSnapshot(ctx, "ws-1", "delivery")
+		if err != nil {
+			t.Fatalf("GetStoredLoopConfigSnapshot() error = %v", err)
+		}
+		if stored.Revision != initial.Revision || stored.Config == nil ||
+			stored.Config.BudgetTokens == nil || *stored.Config.BudgetTokens != 1000 ||
+			stored.Config.FanOutWidth != nil {
+			t.Fatalf("snapshot after failed mutations = %#v, want unchanged initial state", stored)
+		}
+	})
+
+	t.Run("Should admit one winner for concurrent config CAS writes", func(t *testing.T) {
+		t.Parallel()
+
+		globalDB := openLoopTestGlobalDB(t)
+		ctx := testutil.Context(t)
+		if _, err := globalDB.CompareAndSwapLoopConfig(
+			ctx, "ws-1", "delivery", 0, looppkg.LoopConfig{BudgetTokens: new(1000)},
+		); err != nil {
+			t.Fatalf("CompareAndSwapLoopConfig(initial) error = %v", err)
+		}
+		errorsByWriter := make(chan error, 2)
+		var writers sync.WaitGroup
+		for width := 2; width <= 3; width++ {
+			writers.Add(1)
+			go func(fanOutWidth int) {
+				defer writers.Done()
+				_, mutationErr := globalDB.CompareAndSwapLoopConfig(
+					ctx, "ws-1", "delivery", 1, looppkg.LoopConfig{FanOutWidth: &fanOutWidth},
+				)
+				errorsByWriter <- mutationErr
+			}(width)
+		}
+		writers.Wait()
+		close(errorsByWriter)
+		var successes, conflicts int
+		for mutationErr := range errorsByWriter {
+			switch {
+			case mutationErr == nil:
+				successes++
+			case errors.Is(mutationErr, looppkg.ErrConfigRevisionConflict):
+				conflicts++
+			default:
+				t.Fatalf("concurrent mutation error = %v", mutationErr)
+			}
+		}
+		if successes != 1 || conflicts != 1 {
+			t.Fatalf("concurrent outcomes = %d successes/%d conflicts, want 1/1", successes, conflicts)
+		}
+		stored, err := globalDB.GetStoredLoopConfigSnapshot(ctx, "ws-1", "delivery")
+		if err != nil {
+			t.Fatalf("GetStoredLoopConfigSnapshot() error = %v", err)
+		}
+		if stored.Revision != 2 {
+			t.Fatalf("stored revision = %d, want 2", stored.Revision)
+		}
+	})
+
 	t.Run("Should round trip loop config by workspace and loop name", func(t *testing.T) {
 		t.Parallel()
 

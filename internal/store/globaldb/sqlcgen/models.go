@@ -618,6 +618,7 @@ type LoopConfig struct {
 	RuntimeDefaultsJson sql.NullString `json:"runtime_defaults_json"`
 	RuntimeRulesJson    sql.NullString `json:"runtime_rules_json"`
 	EnvironmentJson     sql.NullString `json:"environment_json"`
+	Revision            int64          `json:"revision"`
 }
 
 type LoopDefinitionSnapshot struct {

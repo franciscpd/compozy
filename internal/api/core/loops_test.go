@@ -199,6 +199,9 @@ func TestLoopHandlersExposeCatalogRunConfigAnnotationsAndEvents(t *testing.T) {
 			configPayload.Config.Environment.WorktreeRef != "feature-a" {
 			t.Fatalf("GET /config payload = %#v", configPayload)
 		}
+		if configPayload.ConfigRevision != 3 {
+			t.Fatalf("GET /config revision = %d, want 3", configPayload.ConfigRevision)
+		}
 		if configPayload.EffectiveConfig.FanOutWidth != 4 ||
 			configPayload.EffectiveConfig.GateMaxRevisions != 10 ||
 			configPayload.EffectiveConfig.Environment.Mode != contract.LoopEnvironmentModeWorktree {
@@ -210,7 +213,10 @@ func TestLoopHandlersExposeCatalogRunConfigAnnotationsAndEvents(t *testing.T) {
 			engine,
 			http.MethodPut,
 			"/workspaces/ws-1/loops/alpha/config",
-			testutil.MustJSONBody(t, contract.PutLoopConfigRequest{Config: loopConfig()}),
+			testutil.MustJSONBody(t, contract.PutLoopConfigRequest{
+				Config:           loopConfig(),
+				ExpectedRevision: new(int64(3)),
+			}),
 		)
 		assertLoopStatus(t, putConfigResp.Code, http.StatusOK, putConfigResp.Body.String())
 		var putConfigPayload contract.LoopConfigResponse
@@ -219,6 +225,9 @@ func TestLoopHandlersExposeCatalogRunConfigAnnotationsAndEvents(t *testing.T) {
 			putConfigPayload.Config.Environment == nil ||
 			putConfigPayload.Config.Environment.WorktreeRef != "feature-a" {
 			t.Fatalf("PUT /config payload = %#v", putConfigPayload)
+		}
+		if putConfigPayload.ConfigRevision != 4 {
+			t.Fatalf("PUT /config revision = %d, want 4", putConfigPayload.ConfigRevision)
 		}
 
 		annotationsResp := performRequest(t, engine, http.MethodGet, "/workspaces/ws-1/loops/alpha/annotations", nil)
@@ -1378,6 +1387,41 @@ func TestLoopHandlersExposeValidationAndConflictBodies(t *testing.T) {
 		}
 	})
 
+	t.Run("Should return safe revisions on config CAS conflicts", func(t *testing.T) {
+		t.Parallel()
+
+		service := happyLoopService(t)
+		service.putLoopConfigFn = func(
+			_ context.Context,
+			_ string,
+			_ string,
+			req contract.PutLoopConfigRequest,
+		) (contract.LoopConfigResponse, error) {
+			if req.ExpectedRevision == nil || *req.ExpectedRevision != 4 {
+				t.Fatalf("expected revision = %#v, want 4", req.ExpectedRevision)
+			}
+			return contract.LoopConfigResponse{}, &looppkg.ConfigRevisionConflictError{
+				Expected: 4,
+				Current:  6,
+			}
+		}
+		_, engine := newLoopHandlerFixture(t, "httpapi", service)
+		response := performRequest(
+			t,
+			engine,
+			http.MethodPut,
+			"/workspaces/ws-1/loops/alpha/config",
+			[]byte(`{"config":{},"expected_revision":4}`),
+		)
+		assertLoopStatus(t, response.Code, http.StatusConflict, response.Body.String())
+		var payload contract.LoopConfigRevisionConflictResponse
+		testutil.DecodeJSONResponse(t, response, &payload)
+		if payload.Error != looppkg.ErrConfigRevisionConflict.Error() ||
+			payload.ExpectedRevision != 4 || payload.CurrentRevision != 6 {
+			t.Fatalf("config conflict payload = %#v", payload)
+		}
+	})
+
 	t.Run("Should return error payloads for invalid Loop run transitions", func(t *testing.T) {
 		t.Parallel()
 
@@ -1974,10 +2018,10 @@ func happyLoopService(t testing.TB) *stubLoopService {
 			return contract.RunLoopResponse{Run: loopRunPayload("run-1", looppkg.StatusRunning)}, nil
 		},
 		getLoopConfigFn: func(context.Context, string, string) (contract.LoopConfigResponse, error) {
-			return contract.LoopConfigResponse{Config: &cfg, EffectiveConfig: effectiveCfg}, nil
+			return contract.LoopConfigResponse{Config: &cfg, EffectiveConfig: effectiveCfg, ConfigRevision: 3}, nil
 		},
 		putLoopConfigFn: func(context.Context, string, string, contract.PutLoopConfigRequest) (contract.LoopConfigResponse, error) {
-			return contract.LoopConfigResponse{Config: &cfg, EffectiveConfig: effectiveCfg}, nil
+			return contract.LoopConfigResponse{Config: &cfg, EffectiveConfig: effectiveCfg, ConfigRevision: 4}, nil
 		},
 		getInputDefaultsFn: func(
 			context.Context,

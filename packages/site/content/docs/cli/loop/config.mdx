@@ -1,25 +1,22 @@
 ---
-title: "compozy loop configure"
-description: "Write per-loop runtime config overrides"
+title: "compozy loop config"
+description: "Read per-loop runtime config overrides"
 ---
 
-## compozy loop configure
+## compozy loop config
 
-Write per-loop runtime config overrides
+Read per-loop runtime config overrides
 
 ```
-compozy loop configure [flags]
+compozy loop config [flags]
 ```
 
 ### Options
 
 ```
-      --expected-revision int   Require the current config revision before writing
-      --file string             Loop config YAML or JSON file
-  -h, --help                    help for configure
-      --name string             Loop name
-      --set stringArray         Config field key=value (repeatable; JSON values supported)
-      --workspace string        Override workspace (ID, name, or path)
+  -h, --help               help for config
+      --name string        Loop name
+      --workspace string   Override workspace (ID, name, or path)
 ```
 
 ### Options inherited from parent commands
@@ -44,5 +41,5 @@ The root `-o, --output` flag accepts these values. A renderer is supported only 
 Example:
 
 ```bash
-compozy loop configure -o json
+compozy loop config -o json
 ```

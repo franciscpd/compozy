@@ -247,7 +247,7 @@ const getLoopConfig = `-- name: GetLoopConfig :one
 SELECT human_gate_enabled, reattempt_strategy, enabled_checks_json,
        iteration_cap, budget_tokens, budget_wall_sec, budget_on_exceeded,
        no_progress_window, fan_out_width, gate_max_revisions,
-       runtime_defaults_json, runtime_rules_json, environment_json
+       runtime_defaults_json, runtime_rules_json, environment_json, revision
 FROM loop_config WHERE workspace_id = ?1 AND loop_name = ?2
 `
 
@@ -270,6 +270,7 @@ type GetLoopConfigRow struct {
 	RuntimeDefaultsJson sql.NullString `json:"runtime_defaults_json"`
 	RuntimeRulesJson    sql.NullString `json:"runtime_rules_json"`
 	EnvironmentJson     sql.NullString `json:"environment_json"`
+	Revision            int64          `json:"revision"`
 }
 
 func (q *Queries) GetLoopConfig(ctx context.Context, arg GetLoopConfigParams) (GetLoopConfigRow, error) {
@@ -289,6 +290,7 @@ func (q *Queries) GetLoopConfig(ctx context.Context, arg GetLoopConfigParams) (G
 		&i.RuntimeDefaultsJson,
 		&i.RuntimeRulesJson,
 		&i.EnvironmentJson,
+		&i.Revision,
 	)
 	return i, err
 }
@@ -443,22 +445,23 @@ func (q *Queries) GetLoopRunEventHead(ctx context.Context, arg GetLoopRunEventHe
 	return column_1, err
 }
 
-const insertLoopConfigIfMissing = `-- name: InsertLoopConfigIfMissing :exec
-INSERT OR IGNORE INTO loop_config (
+const insertLoopConfig = `-- name: InsertLoopConfig :exec
+INSERT INTO loop_config (
   workspace_id, loop_name, human_gate_enabled, reattempt_strategy, enabled_checks_json,
   iteration_cap, budget_tokens, budget_wall_sec, budget_on_exceeded,
   no_progress_window, fan_out_width, gate_max_revisions,
-  runtime_defaults_json, runtime_rules_json, environment_json
+  runtime_defaults_json, runtime_rules_json, environment_json, revision
 ) VALUES (
   ?1, ?2, ?3,
   ?4, ?5, ?6,
   ?7, ?8, ?9,
   ?10, ?11, ?12,
-  ?13, ?14, ?15
+  ?13, ?14, ?15,
+  ?16
 )
 `
 
-type InsertLoopConfigIfMissingParams struct {
+type InsertLoopConfigParams struct {
 	WorkspaceID         string         `json:"workspace_id"`
 	LoopName            string         `json:"loop_name"`
 	HumanGateEnabled    int64          `json:"human_gate_enabled"`
@@ -474,10 +477,11 @@ type InsertLoopConfigIfMissingParams struct {
 	RuntimeDefaultsJson sql.NullString `json:"runtime_defaults_json"`
 	RuntimeRulesJson    sql.NullString `json:"runtime_rules_json"`
 	EnvironmentJson     sql.NullString `json:"environment_json"`
+	Revision            int64          `json:"revision"`
 }
 
-func (q *Queries) InsertLoopConfigIfMissing(ctx context.Context, arg InsertLoopConfigIfMissingParams) error {
-	_, err := q.db.ExecContext(ctx, insertLoopConfigIfMissing,
+func (q *Queries) InsertLoopConfig(ctx context.Context, arg InsertLoopConfigParams) error {
+	_, err := q.db.ExecContext(ctx, insertLoopConfig,
 		arg.WorkspaceID,
 		arg.LoopName,
 		arg.HumanGateEnabled,
@@ -493,6 +497,7 @@ func (q *Queries) InsertLoopConfigIfMissing(ctx context.Context, arg InsertLoopC
 		arg.RuntimeDefaultsJson,
 		arg.RuntimeRulesJson,
 		arg.EnvironmentJson,
+		arg.Revision,
 	)
 	return err
 }
@@ -894,83 +899,60 @@ func (q *Queries) NextLoopRunEventSequence(ctx context.Context, loopRunID string
 	return column_1, err
 }
 
-const patchLoopConfig = `-- name: PatchLoopConfig :exec
+const replaceLoopConfig = `-- name: ReplaceLoopConfig :exec
 UPDATE loop_config SET
-  human_gate_enabled = CASE WHEN ?1 THEN ?2 ELSE human_gate_enabled END,
-  reattempt_strategy = CASE WHEN ?3 THEN ?4 ELSE reattempt_strategy END,
-  enabled_checks_json = CASE WHEN ?5 THEN ?6 ELSE enabled_checks_json END,
-  iteration_cap = CASE WHEN ?7 THEN ?8 ELSE iteration_cap END,
-  budget_tokens = CASE WHEN ?9 THEN ?10 ELSE budget_tokens END,
-  budget_wall_sec = CASE WHEN ?11 THEN ?12 ELSE budget_wall_sec END,
-  budget_on_exceeded = CASE WHEN ?13 THEN ?14 ELSE budget_on_exceeded END,
-  no_progress_window = CASE WHEN ?15 THEN ?16 ELSE no_progress_window END,
-  fan_out_width = CASE WHEN ?17 THEN ?18 ELSE fan_out_width END,
-  gate_max_revisions = CASE WHEN ?19 THEN ?20 ELSE gate_max_revisions END,
-  runtime_defaults_json = CASE WHEN ?21 THEN ?22 ELSE runtime_defaults_json END,
-  runtime_rules_json = CASE WHEN ?23 THEN ?24 ELSE runtime_rules_json END,
-  environment_json = CASE WHEN ?25 THEN ?26 ELSE environment_json END
-WHERE workspace_id = ?27 AND loop_name = ?28
+  human_gate_enabled = ?1,
+  reattempt_strategy = ?2,
+  enabled_checks_json = ?3,
+  iteration_cap = ?4,
+  budget_tokens = ?5,
+  budget_wall_sec = ?6,
+  budget_on_exceeded = ?7,
+  no_progress_window = ?8,
+  fan_out_width = ?9,
+  gate_max_revisions = ?10,
+  runtime_defaults_json = ?11,
+  runtime_rules_json = ?12,
+  environment_json = ?13,
+  revision = ?14
+WHERE workspace_id = ?15 AND loop_name = ?16
 `
 
-type PatchLoopConfigParams struct {
-	PatchHumanGate        int64          `json:"patch_human_gate"`
-	HumanGateEnabled      int64          `json:"human_gate_enabled"`
-	PatchReattempt        sql.NullString `json:"patch_reattempt"`
-	ReattemptStrategy     sql.NullString `json:"reattempt_strategy"`
-	PatchEnabledChecks    string         `json:"patch_enabled_checks"`
-	EnabledChecksJson     string         `json:"enabled_checks_json"`
-	PatchIterationCap     sql.NullInt64  `json:"patch_iteration_cap"`
-	IterationCap          sql.NullInt64  `json:"iteration_cap"`
-	PatchBudgetTokens     sql.NullInt64  `json:"patch_budget_tokens"`
-	BudgetTokens          sql.NullInt64  `json:"budget_tokens"`
-	PatchBudgetWallSec    sql.NullInt64  `json:"patch_budget_wall_sec"`
-	BudgetWallSec         sql.NullInt64  `json:"budget_wall_sec"`
-	PatchBudgetOnExceeded sql.NullString `json:"patch_budget_on_exceeded"`
-	BudgetOnExceeded      sql.NullString `json:"budget_on_exceeded"`
-	PatchNoProgressWindow sql.NullInt64  `json:"patch_no_progress_window"`
-	NoProgressWindow      sql.NullInt64  `json:"no_progress_window"`
-	PatchFanOutWidth      sql.NullInt64  `json:"patch_fan_out_width"`
-	FanOutWidth           sql.NullInt64  `json:"fan_out_width"`
-	PatchGateMaxRevisions sql.NullInt64  `json:"patch_gate_max_revisions"`
-	GateMaxRevisions      sql.NullInt64  `json:"gate_max_revisions"`
-	PatchRuntimeDefaults  sql.NullString `json:"patch_runtime_defaults"`
-	RuntimeDefaultsJson   sql.NullString `json:"runtime_defaults_json"`
-	PatchRuntimeRules     sql.NullString `json:"patch_runtime_rules"`
-	RuntimeRulesJson      sql.NullString `json:"runtime_rules_json"`
-	PatchEnvironment      sql.NullString `json:"patch_environment"`
-	EnvironmentJson       sql.NullString `json:"environment_json"`
-	WorkspaceID           string         `json:"workspace_id"`
-	LoopName              string         `json:"loop_name"`
+type ReplaceLoopConfigParams struct {
+	HumanGateEnabled    int64          `json:"human_gate_enabled"`
+	ReattemptStrategy   sql.NullString `json:"reattempt_strategy"`
+	EnabledChecksJson   string         `json:"enabled_checks_json"`
+	IterationCap        sql.NullInt64  `json:"iteration_cap"`
+	BudgetTokens        sql.NullInt64  `json:"budget_tokens"`
+	BudgetWallSec       sql.NullInt64  `json:"budget_wall_sec"`
+	BudgetOnExceeded    sql.NullString `json:"budget_on_exceeded"`
+	NoProgressWindow    sql.NullInt64  `json:"no_progress_window"`
+	FanOutWidth         sql.NullInt64  `json:"fan_out_width"`
+	GateMaxRevisions    sql.NullInt64  `json:"gate_max_revisions"`
+	RuntimeDefaultsJson sql.NullString `json:"runtime_defaults_json"`
+	RuntimeRulesJson    sql.NullString `json:"runtime_rules_json"`
+	EnvironmentJson     sql.NullString `json:"environment_json"`
+	Revision            int64          `json:"revision"`
+	WorkspaceID         string         `json:"workspace_id"`
+	LoopName            string         `json:"loop_name"`
 }
 
-func (q *Queries) PatchLoopConfig(ctx context.Context, arg PatchLoopConfigParams) error {
-	_, err := q.db.ExecContext(ctx, patchLoopConfig,
-		arg.PatchHumanGate,
+func (q *Queries) ReplaceLoopConfig(ctx context.Context, arg ReplaceLoopConfigParams) error {
+	_, err := q.db.ExecContext(ctx, replaceLoopConfig,
 		arg.HumanGateEnabled,
-		arg.PatchReattempt,
 		arg.ReattemptStrategy,
-		arg.PatchEnabledChecks,
 		arg.EnabledChecksJson,
-		arg.PatchIterationCap,
 		arg.IterationCap,
-		arg.PatchBudgetTokens,
 		arg.BudgetTokens,
-		arg.PatchBudgetWallSec,
 		arg.BudgetWallSec,
-		arg.PatchBudgetOnExceeded,
 		arg.BudgetOnExceeded,
-		arg.PatchNoProgressWindow,
 		arg.NoProgressWindow,
-		arg.PatchFanOutWidth,
 		arg.FanOutWidth,
-		arg.PatchGateMaxRevisions,
 		arg.GateMaxRevisions,
-		arg.PatchRuntimeDefaults,
 		arg.RuntimeDefaultsJson,
-		arg.PatchRuntimeRules,
 		arg.RuntimeRulesJson,
-		arg.PatchEnvironment,
 		arg.EnvironmentJson,
+		arg.Revision,
 		arg.WorkspaceID,
 		arg.LoopName,
 	)

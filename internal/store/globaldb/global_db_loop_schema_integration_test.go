@@ -71,6 +71,15 @@ func TestOpenGlobalDBBootstrapsLoopSchemaIntegration(t *testing.T) {
 		if stored.Environment == nil || stored.Environment.Mode != dsl.EnvironmentPerRun {
 			t.Fatalf("reopened Environment = %#v, want per_run", stored.Environment)
 		}
+		snapshot, err := second.GetStoredLoopConfigSnapshot(
+			testutil.Context(t), "ws-loop-environment", "delivery",
+		)
+		if err != nil {
+			t.Fatalf("GetStoredLoopConfigSnapshot(reopened) error = %v", err)
+		}
+		if snapshot.Revision != 1 {
+			t.Fatalf("reopened config revision = %d, want 1", snapshot.Revision)
+		}
 		generationOutputs, err := second.ListGenerationOutputs(
 			testutil.Context(t), "ws-loop-environment", created.ID, 1,
 		)

@@ -479,6 +479,7 @@ const loopConfigureInputSchema = `{
 	"properties":{
 		"workspace":{"type":"string"},
 		"name":{"type":"string","minLength":1},
+		"expected_revision":{"type":"integer","minimum":0},
 		"config":` + loopConfigInputSchema + `
 	}
 }`

@@ -56,10 +56,17 @@ lifecycle layer, which overrides the matching delivery or watch default. The res
 pinned when work is admitted, so a config reload never rewrites a running attempt. `compozy loop
 inspect -o json` reports the effective lifecycle values and a source for each field.
 
-`GET /loops/:name/config` returns the stored per-Loop override as `config` and the daemon-resolved
-first three layers as `effective_config`. A missing override is `config: null`; it is not a missing
-Loop and does not prevent clients from reading the effective values. Reading or writing config for
-a missing Loop returns `404` and creates no detached override.
+`GET /loops/:name/config` returns the stored per-Loop override as `config`, the daemon-resolved
+first three layers as `effective_config`, and the current `config_revision`. A missing override is
+`config: null` at revision `0`; it is not a missing Loop and does not prevent clients from reading
+the effective values. Reads never create a config row. Reading or writing config for a missing Loop
+returns `404` and creates no detached override.
+
+Writers can send `expected_revision` with the `PUT` request, the CLI `--expected-revision` flag, or
+the native tool input. The first write expects revision `0`; each semantic change advances the
+revision by one. Repeating an unchanged patch keeps the same revision. A stale write returns `409`
+with both the expected and current revisions, so clients can read the new snapshot before deciding
+whether to retry.
 
 Loop `run-agent` workers use Loop-owned `runtime_defaults` and `runtime_rules`; they do not read
 `[[tasks.run.task_runtime_rules]]`. Runtime fields resolve independently and the daemon persists the
@@ -83,7 +90,8 @@ Store the file as the Loop's workspace default with `--file`, or apply it only t
 `--config-file`:
 
 ```bash
-compozy loop configure --name reviews-watch --file loop-config.yaml --workspace .
+compozy loop config --name reviews-watch --workspace . -o json
+compozy loop configure --name reviews-watch --file loop-config.yaml --workspace . --expected-revision 3
 compozy loop run --name reviews-watch --config-file loop-config.yaml --workspace .
 ```
 
@@ -149,7 +157,7 @@ Configure is fully agent-manageable — the same overlay, written structurally:
 
 | Action       | CLI                                | HTTP                      | Native tool                          |
 | ------------ | ---------------------------------- | ------------------------- | ------------------------------------ |
-| Read config  | —                                  | `GET /loops/:name/config` | `compozy__loop_inspect` (definition) |
+| Read config  | `compozy loop config`              | `GET /loops/:name/config` | `compozy__loop_inspect` (definition) |
 | Write config | `compozy loop configure --set k=v` | `PUT /loops/:name/config` | `compozy__loop_configure`            |
 
 See the [`compozy loop`](/docs/cli/loop) CLI and the [Loops API](/docs/api/loops).

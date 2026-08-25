@@ -288,6 +288,14 @@ func (h *BaseHandlers) mutateLoopRun(c *gin.Context, mutate func(LoopService) er
 }
 
 func (h *BaseHandlers) respondLoopError(c *gin.Context, err error) {
+	if conflict, ok := errors.AsType[*looppkg.ConfigRevisionConflictError](err); ok {
+		c.JSON(http.StatusConflict, contract.LoopConfigRevisionConflictResponse{
+			Error:            looppkg.ErrConfigRevisionConflict.Error(),
+			ExpectedRevision: conflict.Expected,
+			CurrentRevision:  conflict.Current,
+		})
+		return
+	}
 	if conflict, ok := errors.AsType[*LoopVersionConflictError](err); ok {
 		c.JSON(http.StatusConflict, contract.LoopVersionConflictResponse{
 			Error:          ErrLoopVersionConflict.Error(),

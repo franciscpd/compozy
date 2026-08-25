@@ -4,6 +4,7 @@
         "index",
         "approve",
         "cancel",
+        "config",
         "configure",
         "create",
         "delete",

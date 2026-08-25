@@ -113107,6 +113107,8 @@ export interface operations {
                 };
               }[];
             } | null;
+            /** Format: int64 */
+            config_revision: number;
             effective_config: {
               /** @enum {string} */
               budget_on_exceeded: "halt" | "escalate";
@@ -113361,6 +113363,8 @@ export interface operations {
               };
             }[];
           };
+          /** Format: int64 */
+          expected_revision?: number | null;
         };
       };
     };
@@ -113422,6 +113426,8 @@ export interface operations {
                 };
               }[];
             } | null;
+            /** Format: int64 */
+            config_revision: number;
             effective_config: {
               /** @enum {string} */
               budget_on_exceeded: "halt" | "escalate";
@@ -113544,6 +113550,21 @@ export interface operations {
               title: string;
             } | null;
             error: string;
+          };
+        };
+      };
+      /** @description Loop config revision conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            /** Format: int64 */
+            current_revision: number;
+            error: string;
+            /** Format: int64 */
+            expected_revision: number;
           };
         };
       };

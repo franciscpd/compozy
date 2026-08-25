@@ -27,6 +27,10 @@ func (s *daemonLoopAPIService) GetLoopConfig(
 	if err != nil {
 		return contract.LoopConfigResponse{}, err
 	}
+	return loopConfigResponse(snapshot)
+}
+
+func loopConfigResponse(snapshot looppkg.ConfigSnapshot) (contract.LoopConfigResponse, error) {
 	payload, err := loopConfigPayload(snapshot.Stored)
 	if err != nil {
 		return contract.LoopConfigResponse{}, err
@@ -35,7 +39,11 @@ func (s *daemonLoopAPIService) GetLoopConfig(
 	if err != nil {
 		return contract.LoopConfigResponse{}, err
 	}
-	return contract.LoopConfigResponse{Config: payload, EffectiveConfig: effective}, nil
+	return contract.LoopConfigResponse{
+		Config:          payload,
+		EffectiveConfig: effective,
+		ConfigRevision:  snapshot.Revision,
+	}, nil
 }
 
 func (s *daemonLoopAPIService) PutLoopConfig(
@@ -53,22 +61,15 @@ func (s *daemonLoopAPIService) PutLoopConfig(
 	if err != nil {
 		return contract.LoopConfigResponse{}, err
 	}
-	if err := s.aggregate.Configure(ctx, ws, profileID, name, cfg); err != nil {
-		return contract.LoopConfigResponse{}, err
+	revisionService, ok := s.aggregate.(looppkg.LoopConfigRevisionService)
+	if !ok {
+		return contract.LoopConfigResponse{}, looppkg.ErrConfigRevisionStoreUnavailable
 	}
-	snapshot, err := s.aggregate.GetConfigSnapshot(ctx, ws, profileID, name)
+	snapshot, err := revisionService.ConfigureWithRevision(ctx, ws, profileID, name, cfg, req.ExpectedRevision)
 	if err != nil {
 		return contract.LoopConfigResponse{}, err
 	}
-	payload, err := loopConfigPayload(snapshot.Stored)
-	if err != nil {
-		return contract.LoopConfigResponse{}, err
-	}
-	effective, err := loopEffectiveConfigPayload(snapshot.Effective)
-	if err != nil {
-		return contract.LoopConfigResponse{}, err
-	}
-	return contract.LoopConfigResponse{Config: payload, EffectiveConfig: effective}, nil
+	return loopConfigResponse(snapshot)
 }
 
 func (s *daemonLoopAPIService) GetLoopAnnotations(

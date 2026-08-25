@@ -529,6 +529,45 @@ func TestOpenGlobalDBReopenPreservesRowsAndStatus(t *testing.T) {
 		assertCompleteMigrationStream(t, status, MigrationStream())
 	})
 
+	t.Run("Should initialize migrated loop config rows at revision one", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), GlobalDatabaseName)
+		prefixDB, err := openGlobalMigrationPrefixDatabase(
+			t,
+			path,
+			globalMigrationPrefixBefore(t, "00090_schema.sql"),
+		)
+		if err != nil {
+			t.Fatalf("open prior global migration prefix error = %v", err)
+		}
+		ctx := testutil.Context(t)
+		if _, err := prefixDB.ExecContext(ctx, `INSERT INTO loop_config (
+			workspace_id, loop_name, human_gate_enabled, enabled_checks_json, iteration_cap
+		) VALUES ('ws-loop-revision', 'delivery', 0, '{}', 7)`); err != nil {
+			t.Fatalf("seed prior loop config error = %v", err)
+		}
+		if err := prefixDB.Close(); err != nil {
+			t.Fatalf("Close(prior prefix) error = %v", err)
+		}
+
+		upgraded, err := openGlobalMigrationUpgrade(t, path)
+		if err != nil {
+			t.Fatalf("OpenGlobalDB(upgrade) error = %v", err)
+		}
+		t.Cleanup(func() {
+			if closeErr := upgraded.Close(testutil.Context(t)); closeErr != nil {
+				t.Errorf("Close(upgraded cleanup) error = %v", closeErr)
+			}
+		})
+		snapshot, err := upgraded.GetStoredLoopConfigSnapshot(ctx, "ws-loop-revision", "delivery")
+		if err != nil {
+			t.Fatalf("GetStoredLoopConfigSnapshot() error = %v", err)
+		}
+		if snapshot.Config == nil || snapshot.Revision != 1 || snapshot.Config.IterationCap == nil ||
+			*snapshot.Config.IterationCap != 7 {
+			t.Fatalf("migrated snapshot = %#v, want iteration cap 7 at revision 1", snapshot)
+		}
+	})
+
 	t.Run("Should preserve rows and migration status across reopen", func(t *testing.T) {
 		t.Parallel()
 

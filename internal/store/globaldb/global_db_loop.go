@@ -15,6 +15,7 @@ import (
 )
 
 var _ looppkg.Store = (*LoopRepo)(nil)
+var _ looppkg.LoopConfigRevisionStore = (*LoopRepo)(nil)
 
 const loopRunSelectColumnsSQL = `
 	id, profile_id, workspace_id, loop_name, status, historical, generation, reattempt_strategy, created_at, started_at,
@@ -370,6 +371,84 @@ func (g *LoopRepo) GetLoopConfig(
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// GetStoredLoopConfigSnapshot loads the stored config and revision without creating a row.
+func (g *LoopRepo) GetStoredLoopConfigSnapshot(
+	ctx context.Context,
+	ws looppkg.WorkspaceID,
+	loopName string,
+) (looppkg.StoredLoopConfigSnapshot, error) {
+	if err := g.checkReady(ctx, "get stored loop config snapshot"); err != nil {
+		return looppkg.StoredLoopConfigSnapshot{}, err
+	}
+	workspaceID, trimmedLoopName, err := validateLoopConfigStoreKey(ws, loopName)
+	if err != nil {
+		return looppkg.StoredLoopConfigSnapshot{}, err
+	}
+	return storedLoopConfigSnapshotWithQueries(ctx, g.queries, workspaceID, trimmedLoopName)
+}
+
+// CompareAndSwapLoopConfig atomically applies a semantic config patch at the expected revision.
+func (g *LoopRepo) CompareAndSwapLoopConfig(
+	ctx context.Context,
+	ws looppkg.WorkspaceID,
+	loopName string,
+	expectedRevision int64,
+	cfg looppkg.LoopConfig,
+) (looppkg.StoredLoopConfigSnapshot, error) {
+	if err := g.checkReady(ctx, "compare and swap loop config"); err != nil {
+		return looppkg.StoredLoopConfigSnapshot{}, err
+	}
+	if expectedRevision < 0 {
+		return looppkg.StoredLoopConfigSnapshot{}, fmt.Errorf(
+			"%w: expected_revision must be non-negative",
+			looppkg.ErrValidation,
+		)
+	}
+	workspaceID, trimmedLoopName, err := validateLoopConfigStoreKey(ws, loopName)
+	if err != nil {
+		return looppkg.StoredLoopConfigSnapshot{}, err
+	}
+	normalized, err := normalizeLoopConfigForStore(cfg)
+	if err != nil {
+		return looppkg.StoredLoopConfigSnapshot{}, err
+	}
+	var snapshot looppkg.StoredLoopConfigSnapshot
+	err = g.withImmediateTransaction(ctx, "compare and swap loop config", func(exec globalSQLExecutor) error {
+		var mutationErr error
+		snapshot, mutationErr = mutateLoopConfigWithExecutor(
+			ctx,
+			exec,
+			workspaceID,
+			trimmedLoopName,
+			cfg,
+			normalized,
+			&expectedRevision,
+		)
+		return mutationErr
+	})
+	if err != nil {
+		return looppkg.StoredLoopConfigSnapshot{}, fmt.Errorf(
+			"store: compare and swap loop config %q/%q: %w",
+			workspaceID,
+			trimmedLoopName,
+			err,
+		)
+	}
+	return snapshot, nil
+}
+
+func validateLoopConfigStoreKey(ws looppkg.WorkspaceID, loopName string) (string, string, error) {
+	workspaceID := strings.TrimSpace(string(ws))
+	trimmedLoopName := strings.TrimSpace(loopName)
+	if workspaceID == "" {
+		return "", "", fmt.Errorf("%w: workspace_id is required", looppkg.ErrValidation)
+	}
+	if trimmedLoopName == "" {
+		return "", "", fmt.Errorf("%w: loop_name is required", looppkg.ErrValidation)
+	}
+	return workspaceID, trimmedLoopName, nil
 }
 
 func getLoopRunByIDWithExecutor(

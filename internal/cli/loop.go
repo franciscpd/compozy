@@ -12,45 +12,47 @@ import (
 )
 
 const (
-	loopLoopKey       = "loop"
-	loopWorkspaceKey  = "workspace"
-	loopNameKey       = "name"
-	loopFileKey       = "file"
-	loopRunIDKey      = "run-id"
-	loopDecisionKey   = "decision"
-	loopDryRunKey     = "dry-run"
-	loopInputKey      = "input"
-	loopConfigFileKey = "config-file"
-	loopRuntimeKey    = "runtime"
-	loopPayloadKey    = "payload"
-	loopListKey       = "list"
-	loopInspectKey    = "inspect"
-	loopCreateKey     = "create"
-	loopConfigureKey  = "configure"
-	loopRunKey        = "run"
-	loopStatusKey     = "status"
-	loopStateKey      = "state"
-	loopGenerationKey = "generation"
-	loopTurnsKey      = "turns"
-	loopCancelKey     = "cancel"
-	loopKillKey       = "kill"
-	loopNodeKey       = "node"
-	loopNodesKey      = "nodes"
-	loopRequeueKey    = "requeue"
-	loopPauseKey      = "pause"
-	loopResumeKey     = "resume"
-	loopApproveKey    = "approve"
-	loopRequestsKey   = "requests"
-	loopRequestKey    = "request"
-	loopRespondKey    = "respond"
-	loopAmendKey      = "amend"
-	loopDiffKey       = "diff"
-	loopRerunKey      = "rerun"
-	loopForkKey       = "fork"
-	loopEditKey       = "edit"
-	loopDeleteKey     = "delete"
-	loopWhyKey        = "why"
-	loopEventsKey     = "events"
+	loopLoopKey             = "loop"
+	loopWorkspaceKey        = "workspace"
+	loopNameKey             = "name"
+	loopFileKey             = "file"
+	loopRunIDKey            = "run-id"
+	loopDecisionKey         = "decision"
+	loopDryRunKey           = "dry-run"
+	loopInputKey            = "input"
+	loopConfigFileKey       = "config-file"
+	loopRuntimeKey          = "runtime"
+	loopPayloadKey          = "payload"
+	loopListKey             = "list"
+	loopInspectKey          = "inspect"
+	loopCreateKey           = "create"
+	loopConfigKey           = "config"
+	loopConfigureKey        = "configure"
+	loopExpectedRevisionKey = "expected-revision"
+	loopRunKey              = "run"
+	loopStatusKey           = "status"
+	loopStateKey            = "state"
+	loopGenerationKey       = "generation"
+	loopTurnsKey            = "turns"
+	loopCancelKey           = "cancel"
+	loopKillKey             = "kill"
+	loopNodeKey             = "node"
+	loopNodesKey            = "nodes"
+	loopRequeueKey          = "requeue"
+	loopPauseKey            = "pause"
+	loopResumeKey           = "resume"
+	loopApproveKey          = "approve"
+	loopRequestsKey         = "requests"
+	loopRequestKey          = "request"
+	loopRespondKey          = "respond"
+	loopAmendKey            = "amend"
+	loopDiffKey             = "diff"
+	loopRerunKey            = "rerun"
+	loopForkKey             = "fork"
+	loopEditKey             = "edit"
+	loopDeleteKey           = "delete"
+	loopWhyKey              = "why"
+	loopEventsKey           = "events"
 )
 
 func newLoopCommand(deps commandDeps) *cobra.Command {
@@ -80,6 +82,7 @@ func newLoopCommand(deps commandDeps) *cobra.Command {
 	cmd.AddCommand(newLoopWhyCommand(deps))
 	cmd.AddCommand(newLoopEventsCommand(deps))
 	cmd.AddCommand(newLoopConfigureCommand(deps))
+	cmd.AddCommand(newLoopConfigCommand(deps))
 	cmd.AddCommand(newLoopApproveCommand(deps))
 	cmd.AddCommand(newLoopRequestsCommand(deps))
 	cmd.AddCommand(newLoopRequestCommand(deps))
@@ -370,11 +373,19 @@ func prepareLoopRunOverrides(cmd *cobra.Command, options loopRunOptions) (*contr
 func newLoopConfigureCommand(deps commandDeps) *cobra.Command {
 	var workspaceRef, name, filePath string
 	var setFlags []string
+	var expectedRevision int64
 	cmd := &cobra.Command{
 		Use:   loopConfigureKey,
 		Short: "Write per-loop runtime config overrides",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			var expectedRevisionPointer *int64
+			if cmd.Flags().Changed(loopExpectedRevisionKey) {
+				if expectedRevision < 0 {
+					return fmt.Errorf("expected revision must be non-negative")
+				}
+				expectedRevisionPointer = &expectedRevision
+			}
 			client, workspaceID, err := loopClientAndWorkspace(cmd, deps, workspaceRef)
 			if err != nil {
 				return err
@@ -392,7 +403,8 @@ func newLoopConfigureCommand(deps commandDeps) *cobra.Command {
 				return err
 			}
 			response, err := client.PutLoopConfig(cmd.Context(), workspaceID, loopName, contract.PutLoopConfigRequest{
-				Config: *config,
+				Config:           *config,
+				ExpectedRevision: expectedRevisionPointer,
 			}, agentCredentialsFromEnv(deps))
 			if err != nil {
 				return err
@@ -404,6 +416,40 @@ func newLoopConfigureCommand(deps commandDeps) *cobra.Command {
 	cmd.Flags().StringVar(&name, loopNameKey, "", "Loop name")
 	cmd.Flags().StringVar(&filePath, loopFileKey, "", "Loop config YAML or JSON file")
 	cmd.Flags().StringArrayVar(&setFlags, "set", nil, "Config field key=value (repeatable; JSON values supported)")
+	cmd.Flags().Int64Var(
+		&expectedRevision,
+		loopExpectedRevisionKey,
+		0,
+		"Require the current config revision before writing",
+	)
+	mustMarkFlagRequired(cmd, loopNameKey)
+	return cmd
+}
+
+func newLoopConfigCommand(deps commandDeps) *cobra.Command {
+	var workspaceRef, name string
+	cmd := &cobra.Command{
+		Use:   loopConfigKey,
+		Short: "Read per-loop runtime config overrides",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client, workspaceID, err := loopClientAndWorkspace(cmd, deps, workspaceRef)
+			if err != nil {
+				return err
+			}
+			loopName, err := requiredLoopFlag(loopNameKey, name)
+			if err != nil {
+				return err
+			}
+			response, err := client.GetLoopConfig(cmd.Context(), workspaceID, loopName)
+			if err != nil {
+				return err
+			}
+			return writeCommandOutput(cmd, loopOutputBundle(response, fmt.Sprintf("Loop %s config", loopName)))
+		},
+	}
+	cmd.Flags().StringVar(&workspaceRef, loopWorkspaceKey, "", "Override workspace (ID, name, or path)")
+	cmd.Flags().StringVar(&name, loopNameKey, "", "Loop name")
 	mustMarkFlagRequired(cmd, loopNameKey)
 	return cmd
 }

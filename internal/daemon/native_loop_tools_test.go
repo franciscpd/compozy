@@ -318,6 +318,62 @@ func TestDaemonNativeLoopTools(t *testing.T) {
 		}
 	})
 
+	t.Run("Should forward and validate the optional Loop config revision", func(t *testing.T) {
+		t.Parallel()
+
+		putCalls := 0
+		registry := newDaemonNativeRegistry(t, &daemonNativeToolsDeps{
+			Sessions: nativeNetworkTestSessionManager("ws-alpha"),
+			Loops: func() core.LoopService {
+				return &nativeLoopServiceStub{
+					putLoopConfigFn: func(
+						_ context.Context,
+						workspaceID string,
+						name string,
+						req contract.PutLoopConfigRequest,
+					) (contract.LoopConfigResponse, error) {
+						putCalls++
+						if workspaceID != "ws-alpha" || name != "release" {
+							t.Fatalf("PutLoopConfig target = %s/%s", workspaceID, name)
+						}
+						if req.ExpectedRevision == nil || *req.ExpectedRevision != 3 {
+							t.Fatalf("expected revision = %#v, want 3", req.ExpectedRevision)
+						}
+						return contract.LoopConfigResponse{ConfigRevision: 4}, nil
+					},
+				}
+			},
+		}, nativeApproveAllPolicyInputs())
+
+		result, err := registry.Call(
+			t.Context(),
+			toolspkg.Scope{SessionID: "sess-alpha", WorkspaceID: "ws-alpha"},
+			toolspkg.CallRequest{
+				ToolID: toolspkg.ToolIDLoopConfigure,
+				Input:  json.RawMessage(`{"name":"release","config":{},"expected_revision":3}`),
+			},
+		)
+		if err != nil {
+			t.Fatalf("Registry.Call(loop_configure) error = %v", err)
+		}
+		requireNativeStructuredContains(t, result, []byte(`"config_revision":4`))
+
+		_, err = registry.Call(
+			t.Context(),
+			toolspkg.Scope{SessionID: "sess-alpha", WorkspaceID: "ws-alpha"},
+			toolspkg.CallRequest{
+				ToolID: toolspkg.ToolIDLoopConfigure,
+				Input:  json.RawMessage(`{"name":"release","config":{},"expected_revision":-1}`),
+			},
+		)
+		if err == nil {
+			t.Fatal("Registry.Call(loop_configure negative revision) error = nil")
+		}
+		if putCalls != 1 {
+			t.Fatalf("PutLoopConfig calls = %d, want 1", putCalls)
+		}
+	})
+
 	t.Run("Should deny deletion of immutable native Loop sources", func(t *testing.T) {
 		t.Parallel()
 

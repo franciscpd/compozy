@@ -503,6 +503,7 @@ func TestLoopCommandShouldMapCLIVerbsToClient(t *testing.T) {
 			"--name", "release",
 			"--set", "iteration_cap=9",
 			"--set", "human_gate_enabled=true",
+			"--expected-revision", "5",
 			"-o", "json",
 		); err != nil {
 			t.Fatalf("executeRootCommand(loop configure) error = %v", err)
@@ -513,6 +514,94 @@ func TestLoopCommandShouldMapCLIVerbsToClient(t *testing.T) {
 		}
 		if capturedRequest.Config.HumanGateEnabled == nil || !*capturedRequest.Config.HumanGateEnabled {
 			t.Fatalf("HumanGateEnabled = %#v, want true", capturedRequest.Config.HumanGateEnabled)
+		}
+		if capturedRequest.ExpectedRevision == nil || *capturedRequest.ExpectedRevision != 5 {
+			t.Fatalf("ExpectedRevision = %#v, want 5", capturedRequest.ExpectedRevision)
+		}
+	})
+
+	t.Run("Should read a revisioned config without mutation flags", func(t *testing.T) {
+		t.Parallel()
+
+		putCalls := 0
+		deps := newTestDeps(t, &stubClient{
+			getWorkspaceFn: resolveTestLoopWorkspace(t),
+			getLoopConfigFn: func(
+				_ context.Context,
+				workspaceID string,
+				name string,
+			) (contract.LoopConfigResponse, error) {
+				if workspaceID != "ws-alpha" || name != "release" {
+					t.Fatalf("GetLoopConfig target = %s/%s, want ws-alpha/release", workspaceID, name)
+				}
+				return contract.LoopConfigResponse{ConfigRevision: 7}, nil
+			},
+			putLoopConfigFn: func(
+				context.Context,
+				string,
+				string,
+				contract.PutLoopConfigRequest,
+				agentidentity.Credentials,
+			) (contract.LoopConfigResponse, error) {
+				putCalls++
+				return contract.LoopConfigResponse{}, nil
+			},
+		})
+		stdout, _, err := executeRootCommand(
+			t,
+			deps,
+			"loop", "config",
+			"--workspace", "alpha",
+			"--name", "release",
+			"-o", "json",
+		)
+		if err != nil {
+			t.Fatalf("executeRootCommand(loop config) error = %v", err)
+		}
+		var response contract.LoopConfigResponse
+		if err := json.Unmarshal([]byte(stdout), &response); err != nil {
+			t.Fatalf("json.Unmarshal(loop config response) error = %v", err)
+		}
+		if response.ConfigRevision != 7 || putCalls != 0 {
+			t.Fatalf("config revision/put calls = %d/%d, want 7/0", response.ConfigRevision, putCalls)
+		}
+
+		_, _, err = executeRootCommand(
+			t,
+			deps,
+			"loop", "config",
+			"--workspace", "alpha",
+			"--name", "release",
+			"--file", "config.yaml",
+		)
+		assertErrorContains(t, err, "unknown flag")
+	})
+
+	t.Run("Should validate expected revision before resolving the workspace", func(t *testing.T) {
+		t.Parallel()
+
+		workspaceCalls := 0
+		deps := newTestDeps(t, &stubClient{
+			getWorkspaceFn: func(context.Context, string) (WorkspaceDetailRecord, error) {
+				workspaceCalls++
+				return WorkspaceDetailRecord{Workspace: contract.WorkspacePayload{ID: "ws-alpha"}}, nil
+			},
+		})
+		for _, value := range []string{"-1", "invalid"} {
+			_, _, err := executeRootCommand(
+				t,
+				deps,
+				"loop", "configure",
+				"--workspace", "alpha",
+				"--name", "release",
+				"--expected-revision", value,
+			)
+			if err == nil {
+				t.Fatalf("expected revision %q error = nil", value)
+			}
+		}
+		if workspaceCalls != 0 {
+			t.Fatalf("workspace resolution calls = %d, want 0", workspaceCalls)
 		}
 	})
 
