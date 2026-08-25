@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	toolspkg "github.com/compozy/compozy/internal/tools"
 	builtintools "github.com/compozy/compozy/internal/tools/builtin"
@@ -68,6 +69,21 @@ func (d *Daemon) bootToolRegistry(
 	}
 	if state.notifier != nil {
 		registryOptions = append(registryOptions, toolspkg.WithHookRunner(state.notifier))
+	}
+	if state.workspaceResolver != nil {
+		registryOptions = append(registryOptions, toolspkg.WithTrustedWorkspaceRootResolver(
+			func(ctx context.Context, workspaceID string) (string, error) {
+				resolved, resolveErr := state.workspaceResolver.Resolve(ctx, workspaceID)
+				if resolveErr != nil {
+					return "", resolveErr
+				}
+				root := strings.TrimSpace(resolved.RootDir)
+				if root == "" {
+					return "", fmt.Errorf("daemon: workspace %q has no root directory", workspaceID)
+				}
+				return root, nil
+			},
+		))
 	}
 	if state.toolProjectionEpoch != nil {
 		registryOptions = append(

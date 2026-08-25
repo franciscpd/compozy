@@ -81,6 +81,7 @@ func toolHookSessionContext(call toolspkg.CallRequest) hookspkg.SessionContext {
 		SessionID:   call.SessionID,
 		AgentName:   call.AgentName,
 		WorkspaceID: call.WorkspaceID,
+		Workspace:   call.TrustedWorkspaceRoot,
 	}
 }
 
@@ -88,6 +89,7 @@ func toolHookCallRef(call toolspkg.CallRequest) hookspkg.ToolCallRef {
 	return hookspkg.ToolCallRef{
 		ToolCallID: call.ToolCallID,
 		ToolID:     call.ToolID.String(),
+		ReadOnly:   call.ReadOnly,
 	}
 }
 

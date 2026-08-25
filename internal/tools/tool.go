@@ -319,6 +319,7 @@ type CallRequest struct {
 	Input                json.RawMessage `json:"input"`
 	SensitiveInputFields []string        `json:"sensitive_input_fields,omitempty"`
 	ApprovalToken        string          `json:"approval_token,omitempty"`
+	ReadOnly             bool            `json:"-"`
 	TrustedWorkspaceRoot string          `json:"-"`
 }
 

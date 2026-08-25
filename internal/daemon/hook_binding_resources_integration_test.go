@@ -194,6 +194,114 @@ func TestGeneratedRequiredExtensionHookContainsMatchedToolCall(t *testing.T) {
 	}
 }
 
+func TestRuntimeRegistryRequiredToolMatchersUseTrustedContext(t *testing.T) {
+	tests := []struct {
+		name                 string
+		descriptorReadOnly   bool
+		matcherReadOnly      bool
+		matcherWorkspace     string
+		resolvedWorkspace    string
+		wantDenied           bool
+		wantHandlerCallCount int32
+	}{
+		{
+			name:               "Should deny matching read-only tool in matching workspace root",
+			descriptorReadOnly: true, matcherReadOnly: true,
+			matcherWorkspace: "/workspace/alpha", resolvedWorkspace: "/workspace/alpha",
+			wantDenied: true, wantHandlerCallCount: 0,
+		},
+		{
+			name:               "Should not let explicit false overmatch read-only tool",
+			descriptorReadOnly: true, matcherReadOnly: false,
+			matcherWorkspace: "/workspace/alpha", resolvedWorkspace: "/workspace/alpha",
+			wantHandlerCallCount: 1,
+		},
+		{
+			name:               "Should deny matching explicit false mutating tool",
+			descriptorReadOnly: false, matcherReadOnly: false,
+			matcherWorkspace: "/workspace/alpha", resolvedWorkspace: "/workspace/alpha",
+			wantDenied: true, wantHandlerCallCount: 0,
+		},
+		{
+			name:               "Should not match a different workspace root",
+			descriptorReadOnly: true, matcherReadOnly: true,
+			matcherWorkspace: "/workspace/beta", resolvedWorkspace: "/workspace/alpha",
+			wantHandlerCallCount: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hookFailure := errors.New("required matcher hook failed")
+			h := newHookBindingIntegrationHarness(t, map[string]hookspkg.Executor{
+				"matcher-guard": hookspkg.NewTypedNativeExecutor(
+					func(
+						context.Context,
+						hookspkg.RegisteredHook,
+						hookspkg.ToolPreCallPayload,
+					) (hookspkg.ToolCallPatch, error) {
+						return hookspkg.ToolCallPatch{}, hookFailure
+					},
+				),
+			})
+			matcherReadOnly := tt.matcherReadOnly
+			h.putBinding(t, "matcher-guard", 0, resources.ResourceScope{
+				Kind: resources.ResourceScopeKindUser,
+			}, hookspkg.HookDecl{
+				Name: "matcher-guard", Event: hookspkg.HookToolPreCall,
+				Source: hookspkg.HookSourceNative, Mode: hookspkg.HookModeSync, Required: true,
+				ExecutorKind: hookspkg.HookExecutorNative,
+				Matcher: hookspkg.HookMatcher{
+					ToolReadOnly: &matcherReadOnly, WorkspaceRoot: tt.matcherWorkspace,
+				},
+			})
+			if err := h.driver.RunBoot(testutil.Context(t)); err != nil {
+				t.Fatalf("driver.RunBoot() error = %v", err)
+			}
+
+			protectedTool := newHookProtectedTool()
+			protectedTool.descriptor.ReadOnly = tt.descriptorReadOnly
+			if tt.descriptorReadOnly {
+				protectedTool.descriptor.Risk = toolspkg.RiskRead
+			}
+			registry, err := toolspkg.NewRegistry(
+				toolspkg.WithProviders(protectedTool),
+				toolspkg.WithPolicyInputs(toolspkg.PolicyInputs{
+					SystemPermissionMode: toolspkg.PermissionModeApproveAll,
+				}, toolspkg.ToolsetCatalog{}),
+				toolspkg.WithHookRunner(h.notifier),
+				toolspkg.WithTrustedWorkspaceRootResolver(
+					func(_ context.Context, workspaceID string) (string, error) {
+						if workspaceID != "ws-alpha" {
+							t.Fatalf("workspace root resolver id = %q, want ws-alpha", workspaceID)
+						}
+						return tt.resolvedWorkspace, nil
+					},
+				),
+			)
+			if err != nil {
+				t.Fatalf("tools.NewRegistry() error = %v", err)
+			}
+			_, callErr := registry.Call(testutil.Context(t), toolspkg.Scope{
+				WorkspaceID: "ws-alpha", AgentName: "batuta-publisher",
+			}, toolspkg.CallRequest{
+				ToolID: "protected_publish", ReadOnly: !tt.descriptorReadOnly,
+				TrustedWorkspaceRoot: "/workspace/beta", Input: json.RawMessage(`{"release":"v1"}`),
+			})
+			if tt.wantDenied {
+				if !errors.Is(callErr, toolspkg.ErrToolDenied) || !errors.Is(callErr, hookFailure) {
+					t.Fatalf("RuntimeRegistry.Call() error = %v, want required hook denial", callErr)
+				}
+			} else if callErr != nil {
+				t.Fatalf("RuntimeRegistry.Call() error = %v, want nil", callErr)
+			}
+			if got := protectedTool.handlerCalls.Load(); got != tt.wantHandlerCallCount {
+				t.Fatalf("protected handler calls = %d, want %d", got, tt.wantHandlerCallCount)
+			}
+		})
+	}
+}
+
 func TestHookBindingResourceReconcileFiresToolHookThroughSessionNotifier(t *testing.T) {
 	toolPayloads := make(chan hookspkg.ToolPreCallPayload, 1)
 	h := newHookBindingIntegrationHarness(t, map[string]hookspkg.Executor{

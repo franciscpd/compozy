@@ -47,6 +47,7 @@ func (r *RuntimeRegistry) executeDispatchTarget(
 	target *dispatchTarget,
 	started time.Time,
 ) (ToolResult, error) {
+	req.ReadOnly = target.descriptor.ReadOnly
 	req.Input = normalizeCallInput(req.Input)
 	if err := r.ensureDispatchTargetCallable(ctx, target, req, started); err != nil {
 		return ToolResult{}, err

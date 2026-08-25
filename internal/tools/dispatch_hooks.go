@@ -101,6 +101,8 @@ func approvalBridgeError(id ToolID, message string, err error, reasons ...Reason
 }
 
 func mergeHookCallRequest(original CallRequest, patched CallRequest) CallRequest {
+	patched.ReadOnly = original.ReadOnly
+	patched.TrustedWorkspaceRoot = original.TrustedWorkspaceRoot
 	if patched.ToolID == "" {
 		patched.ToolID = original.ToolID
 	}

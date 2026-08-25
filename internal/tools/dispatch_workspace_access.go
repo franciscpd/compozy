@@ -11,10 +11,20 @@ import (
 // WorkspaceIDResolver canonicalizes workspace references before policy evaluation.
 type WorkspaceIDResolver func(context.Context, string) (string, error)
 
+// TrustedWorkspaceRootResolver resolves a canonical workspace ID to its trusted root path.
+type TrustedWorkspaceRootResolver func(context.Context, string) (string, error)
+
 // WithWorkspaceIDResolver wires workspace-reference canonicalization into dispatch.
 func WithWorkspaceIDResolver(resolver WorkspaceIDResolver) RegistryOption {
 	return func(registry *RuntimeRegistry) {
 		registry.workspaceIDResolver = resolver
+	}
+}
+
+// WithTrustedWorkspaceRootResolver wires trusted workspace-root enrichment into dispatch hooks.
+func WithTrustedWorkspaceRootResolver(resolver TrustedWorkspaceRootResolver) RegistryOption {
+	return func(registry *RuntimeRegistry) {
+		registry.workspaceRootResolver = resolver
 	}
 }
 
@@ -41,11 +51,11 @@ func (r *RuntimeRegistry) normalizeDispatchCallRequest(
 	requestedWorkspaceID := strings.TrimSpace(req.WorkspaceID)
 	if requestedWorkspaceID == "" {
 		req.WorkspaceID = trustedWorkspaceID
-		return req, nil
+		return r.enrichTrustedWorkspaceRoot(ctx, req)
 	}
 	if trustedWorkspaceID != "" && trustedWorkspaceID == requestedWorkspaceID {
 		req.WorkspaceID = requestedWorkspaceID
-		return req, nil
+		return r.enrichTrustedWorkspaceRoot(ctx, req)
 	}
 	if r == nil || r.workspaceIDResolver == nil {
 		return CallRequest{}, workspaceAccessDeniedError(req.ToolID)
@@ -57,7 +67,7 @@ func (r *RuntimeRegistry) normalizeDispatchCallRequest(
 	requestedWorkspaceID = strings.TrimSpace(canonicalWorkspaceID)
 	if trustedWorkspaceID != "" && trustedWorkspaceID == requestedWorkspaceID {
 		req.WorkspaceID = requestedWorkspaceID
-		return req, nil
+		return r.enrichTrustedWorkspaceRoot(ctx, req)
 	}
 	if r == nil || r.workspaceAccess == nil {
 		return CallRequest{}, workspaceAccessDeniedError(req.ToolID)
@@ -71,6 +81,24 @@ func (r *RuntimeRegistry) normalizeDispatchCallRequest(
 		return CallRequest{}, workspaceAccessDeniedError(req.ToolID)
 	}
 	req.WorkspaceID = requestedWorkspaceID
+	return r.enrichTrustedWorkspaceRoot(ctx, req)
+}
+
+func (r *RuntimeRegistry) enrichTrustedWorkspaceRoot(
+	ctx context.Context,
+	req CallRequest,
+) (CallRequest, error) {
+	req.TrustedWorkspaceRoot = strings.TrimSpace(req.TrustedWorkspaceRoot)
+	workspaceID := strings.TrimSpace(req.WorkspaceID)
+	if workspaceID == "" || r == nil || r.workspaceRootResolver == nil {
+		return req, nil
+	}
+	root, err := r.workspaceRootResolver(ctx, workspaceID)
+	root = strings.TrimSpace(root)
+	if err != nil || root == "" {
+		return CallRequest{}, workspaceAccessDeniedError(req.ToolID)
+	}
+	req.TrustedWorkspaceRoot = root
 	return req, nil
 }
 

@@ -10701,6 +10701,24 @@ func TestDaemonBootToolRegistry(t *testing.T) {
 		homePaths := testHomePaths(t)
 		cfg := testConfig(t, homePaths)
 		skillsRegistry := newLoadedNativeSkillRegistry(t)
+		workspaceRoot := t.TempDir()
+		registryStore := &recordingRegistry{}
+		if err := registryStore.InsertWorkspace(t.Context(), workspacepkg.Workspace{
+			ID: "ws-alpha", RootDir: workspaceRoot, Name: "alpha",
+		}); err != nil {
+			t.Fatalf("InsertWorkspace() error = %v", err)
+		}
+		workspaceResolver, err := workspacepkg.NewResolver(
+			registryStore,
+			workspacepkg.WithHomePaths(homePaths),
+			workspacepkg.WithLogger(discardLogger()),
+			workspacepkg.WithConfigLoader(func(rootDir string) (compozyconfig.Config, error) {
+				return compozyconfig.LoadForHome(homePaths, compozyconfig.WithWorkspaceRoot(rootDir))
+			}),
+		)
+		if err != nil {
+			t.Fatalf("workspace.NewResolver() error = %v", err)
+		}
 		hookFailure := errors.New("required tool hook failure")
 		hookCalls := 0
 		notifier := newHooksNotifier(discardLogger(), nil)
@@ -10712,13 +10730,17 @@ func TestDaemonBootToolRegistry(t *testing.T) {
 			if payload.ToolID != toolspkg.ToolIDToolList.String() {
 				t.Fatalf("tool hook payload.ToolID = %q, want %q", payload.ToolID, toolspkg.ToolIDToolList)
 			}
+			if !payload.ReadOnly || payload.Workspace != workspaceRoot {
+				t.Fatalf("tool hook matcher context = %#v, want trusted read-only/root", payload)
+			}
 			return hookFailure
 		}}, nil)
 		state := &bootState{
-			cfg:            cfg,
-			registry:       &recordingRegistry{},
-			skillsRegistry: skillsRegistry,
-			notifier:       notifier,
+			cfg:               cfg,
+			registry:          registryStore,
+			skillsRegistry:    skillsRegistry,
+			notifier:          notifier,
+			workspaceResolver: workspaceResolver,
 			deps: RuntimeDeps{
 				SkillsRegistry: skillsRegistry,
 				Network:        &nativeNetworkStub{},
@@ -10756,7 +10778,9 @@ func TestDaemonBootToolRegistry(t *testing.T) {
 		if !errors.Is(err, toolspkg.ErrToolNotFound) {
 			t.Fatalf("ToolRegistry.Get(skill_remove) error = %v, want ErrToolNotFound", err)
 		}
-		_, err = state.deps.ToolRegistry.Call(t.Context(), toolspkg.Scope{Operator: true}, toolspkg.CallRequest{
+		_, err = state.deps.ToolRegistry.Call(t.Context(), toolspkg.Scope{
+			Operator: true, WorkspaceID: "ws-alpha",
+		}, toolspkg.CallRequest{
 			ToolID: toolspkg.ToolIDToolList,
 			Input:  json.RawMessage(`{}`),
 		})

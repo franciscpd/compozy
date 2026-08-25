@@ -510,6 +510,89 @@ func TestRuntimeRegistryDispatchApprovalBridge(t *testing.T) {
 func TestRuntimeRegistryDispatchHooksAndErrors(t *testing.T) {
 	t.Parallel()
 
+	t.Run("Should preserve trusted matcher context through every hook phase", func(t *testing.T) {
+		t.Parallel()
+
+		descriptor := validDispatchDescriptor()
+		descriptor.ReadOnly = true
+		descriptor.Risk = RiskRead
+		descriptor.InputSchema = json.RawMessage(`{
+			"type":"object",
+			"required":["query"],
+			"properties":{"query":{"type":"string"},"workspace_root":{"type":"string"}},
+			"additionalProperties":false
+		}`)
+		handle := &registryTestHandle{
+			descriptor:   descriptor,
+			availability: availableDispatchHandle(),
+		}
+		provider := dispatchProviderWithHandle(descriptor, handle)
+		var preCalls, postCalls, postErrorCalls []CallRequest
+		hooks := &recordingHookRunner{
+			pre: func(_ context.Context, call CallRequest) (CallRequest, EffectiveToolDecision, error) {
+				preCalls = append(preCalls, call)
+				return call, hookAllowedDecision(), nil
+			},
+			post: func(_ context.Context, call CallRequest, result ToolResult) (ToolResult, error) {
+				postCalls = append(postCalls, call)
+				return result, nil
+			},
+			postError: func(_ context.Context, call CallRequest, _ error) error {
+				postErrorCalls = append(postErrorCalls, call)
+				return nil
+			},
+		}
+		rootCalls := 0
+		registry := mustDispatchRegistry(
+			t,
+			provider,
+			WithHookRunner(hooks),
+			WithTrustedWorkspaceRootResolver(func(_ context.Context, workspaceID string) (string, error) {
+				rootCalls++
+				if workspaceID != "ws-alpha" {
+					t.Fatalf("workspace root resolver id = %q, want ws-alpha", workspaceID)
+				}
+				return "/workspace/alpha", nil
+			}),
+		)
+		request := CallRequest{
+			ToolID:               descriptor.ID,
+			ReadOnly:             false,
+			TrustedWorkspaceRoot: "/caller/spoof",
+			Input:                json.RawMessage(`{"query":"x","workspace_root":"/input/spoof"}`),
+		}
+		if _, err := registry.Call(t.Context(), Scope{WorkspaceID: "ws-alpha"}, request); err != nil {
+			t.Fatalf("RuntimeRegistry.Call(success) error = %v", err)
+		}
+		handle.callErr = errors.New("provider failed")
+		if _, err := registry.Call(t.Context(), Scope{WorkspaceID: "ws-alpha"}, request); !errors.Is(
+			err,
+			ErrToolBackendFailed,
+		) {
+			t.Fatalf("RuntimeRegistry.Call(failure) error = %v, want ErrToolBackendFailed", err)
+		}
+
+		for phase, calls := range map[string][]CallRequest{
+			"pre": preCalls, "post": postCalls, "post_error": postErrorCalls,
+		} {
+			wantCalls := 1
+			if phase == "pre" {
+				wantCalls = 2
+			}
+			if len(calls) != wantCalls {
+				t.Fatalf("%s hook calls = %d, want %d", phase, len(calls), wantCalls)
+			}
+			for _, call := range calls {
+				if !call.ReadOnly || call.TrustedWorkspaceRoot != "/workspace/alpha" {
+					t.Fatalf("%s hook matcher context = %#v, want authoritative read-only/root", phase, call)
+				}
+			}
+		}
+		if rootCalls != 2 {
+			t.Fatalf("workspace root resolver calls = %d, want 2", rootCalls)
+		}
+	})
+
 	t.Run("Should bind trusted scope before schema validation and provider invocation", func(t *testing.T) {
 		t.Parallel()
 

@@ -26,6 +26,7 @@ type RuntimeRegistry struct {
 	callInputAuthorizer   CallInputAuthorizer
 	workspaceAccess       workspaceaccess.Policy
 	workspaceIDResolver   WorkspaceIDResolver
+	workspaceRootResolver TrustedWorkspaceRootResolver
 	processor             ResultProcessor
 	events                ToolEventSink
 	projectionInvalidator func()
