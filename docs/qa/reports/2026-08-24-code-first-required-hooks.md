@@ -72,21 +72,26 @@ running or interrupting, and runs `goleak.VerifyNone`. The one cross-build scrat
 for this run, `/home/francisross/tmp-builds/compozy-hooks.JruhnR`, was path-validated and removed; a
 final existence check passed.
 
+## Final branch-owned review fixes
+
+- The extension provider harness now configures the authoritative trusted-workspace-root resolver,
+  verifies the canonical `workspace-identity` lookup, and proves that caller decoy root
+  `/caller/spoof` cannot replace `/trusted/workspace`. The focused case passes normally and under the
+  race detector; the full `internal/extension` suite now reaches only the pre-existing lifecycle-token
+  failure below.
+- The branch-owned formatting drift in
+  `packages/site/content/docs/configuration/config-toml.mdx` was corrected with the repository
+  formatter without changing the runtime-rule wording. The aggregate site Turbo lint, typecheck, and
+  test run completed all 8 tasks successfully with 322 tests passing; direct content generation also
+  passed.
+
 ## Unrelated repository baselines
 
 - Full `go test ./internal/extension -count=1` still fails the pre-existing lifecycle-token case
   `TestRegistryConditionalDisableFencesOlderLifecycle`.
-- It also exposes an older provider test that injects caller-owned `TrustedWorkspaceRoot` without
-  configuring the now-required authoritative resolver:
-  `TestExtensionToolProviderDispatch/Should_forward_daemon_authenticated_workspace_context_outside_tool_input`.
-  The focused production hook suites pass; this stale test harness is not treated as live-provider
-  evidence or repaired in the docs-only task.
 - `make gate` ran once and stopped at the known source-size baseline:
   `web/src/systems/marketplace/routes/marketplace-detail.stories.tsx` (508 lines) and
   `web/src/systems/session/index.ts` (504 lines).
-- The aggregate site Turbo validation stopped on unrelated formatting in
-  `packages/site/content/docs/configuration/config-toml.mdx`. Direct validation of the two changed
-  extension pages passed content generation, formatting, typecheck, and all 322 site tests.
 
 `make gate-full` was intentionally not run; the final whole-branch review owns it after both
 prerequisite plans settle.
