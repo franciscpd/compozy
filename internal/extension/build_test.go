@@ -427,6 +427,77 @@ path = "skills"
 		}
 	})
 
+	t.Run("Should preserve hook policy through immutable generation reload", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		writeGoBuildFixture(t, dir)
+		readOnly := false
+		payload := validDescribePayload()
+		payload.Subprocess = extensioncontract.DescribeSubprocess{
+			Command: " ./bin/publisher ",
+			Args:    []string{"serve", "--stdio"},
+			Env:     map[string]string{"BATUTA_MODE": "delivery"},
+		}
+		payload.HookEvents = []extensioncontract.DescribeHookEvent{
+			{
+				Name: "publisher-observer", Event: hookspkg.HookToolPreCall, Profile: "delivery",
+				Mode: hookspkg.HookModeAsync, Required: false,
+			},
+			{
+				Name: "publisher-guard", Event: hookspkg.HookToolPreCall, Profile: "delivery",
+				Mode: hookspkg.HookModeSync, Required: true,
+				Matcher: hookspkg.HookMatcher{
+					AgentName: "batuta-publisher", WorkspaceID: "workspace-1",
+					WorkspaceRoot: "/workspace", ToolID: "release", ToolReadOnly: &readOnly,
+				},
+			},
+		}
+
+		result, err := buildBundle(testutil.Context(t), BuildRequest{SourceDir: dir}, newBuildTestRunner(&payload))
+		if err != nil {
+			t.Fatalf("buildBundle() error = %v", err)
+		}
+		if got, want := len(result.Manifest.Resources.Hooks), 2; got != want {
+			t.Fatalf("len(reloaded hooks) = %d, want %d", got, want)
+		}
+		byName := make(map[string]HookConfig, len(result.Manifest.Resources.Hooks))
+		for _, hook := range result.Manifest.Resources.Hooks {
+			byName[hook.Name] = hook
+		}
+		observer := byName["publisher-observer"]
+		if observer.Mode != string(hookspkg.HookModeAsync) || observer.Required {
+			t.Fatalf("reloaded async observer = %#v, want optional async", observer)
+		}
+		wantGuard := HookConfig{
+			Profile: "delivery", Name: "publisher-guard", Event: string(hookspkg.HookToolPreCall),
+			Mode: string(hookspkg.HookModeSync), Required: true,
+			Matcher: HookMatcherConfig{
+				AgentName: "batuta-publisher", WorkspaceID: "workspace-1",
+				WorkspaceRoot: "/workspace", ToolID: "release", ToolReadOnly: &readOnly,
+			},
+			Executor: HookExecutorConfig{
+				Kind: describeSubprocessKey, Command: "./bin/publisher",
+				Args: []string{"serve", "--stdio"}, Env: map[string]string{"BATUTA_MODE": "delivery"},
+			},
+		}
+		if got := byName["publisher-guard"]; !reflect.DeepEqual(got, wantGuard) {
+			t.Fatalf("reloaded publisher guard = %#v, want %#v", got, wantGuard)
+		}
+		manifestData, err := os.ReadFile(result.ManifestPath)
+		if err != nil {
+			t.Fatalf("os.ReadFile(generated manifest) error = %v", err)
+		}
+		for _, fragment := range []string{
+			"required = true", "[resources.hooks.matcher]", `agent_name = "batuta-publisher"`,
+			"tool_read_only = false",
+		} {
+			if !strings.Contains(string(manifestData), fragment) {
+				t.Fatalf("generated manifest = %s, want fragment %q", manifestData, fragment)
+			}
+		}
+	})
+
 	t.Run("Should copy declared resources and emit them deterministically", func(t *testing.T) {
 		t.Parallel()
 
@@ -882,6 +953,11 @@ func TestManifestFromDescribeHooks(t *testing.T) {
 			{
 				name: "required async", events: []extensioncontract.DescribeHookEvent{{
 					Name: "observer", Event: hookspkg.HookMessageDelta, Mode: hookspkg.HookModeAsync, Required: true,
+				}},
+			},
+			{
+				name: "required async tool hook", events: []extensioncontract.DescribeHookEvent{{
+					Name: "observer", Event: hookspkg.HookToolPreCall, Mode: hookspkg.HookModeAsync, Required: true,
 				}},
 			},
 			{

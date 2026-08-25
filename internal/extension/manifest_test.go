@@ -21,6 +21,69 @@ import (
 	"github.com/compozy/compozy/internal/version"
 )
 
+func TestEncodeManifestTOMLRoundTripsHookPolicy(t *testing.T) {
+	t.Parallel()
+
+	readOnly := false
+	wantHook := HookConfig{
+		Profile: "delivery", Name: "publisher-guard", Event: string(hookspkg.HookToolPreCall),
+		Mode: string(hookspkg.HookModeSync), Required: true,
+		Matcher: HookMatcherConfig{
+			AgentName: "publisher", AgentType: "release", WorkspaceID: "workspace-1",
+			WorkspaceRoot: "/workspace", SessionType: "primary", InputClass: "prompt",
+			ACPEventType: "update", TurnID: "turn-1", ToolID: "publish", ToolName: "release",
+			ToolReadOnly: &readOnly, DecisionClass: "sensitive", MessageRole: "assistant",
+			MessageDeltaType: "text", Channel: "builders", Surface: "task", Kind: "update",
+			Direction: "inbound", WorkState: "active", CompactionReason: "budget",
+			CompactionStrategy: "summarize",
+		},
+		Executor: HookExecutorConfig{
+			Kind: describeSubprocessKey, Command: "./bin/publisher",
+			Args: []string{"serve", "--stdio"}, Env: map[string]string{"BATUTA_MODE": "delivery"},
+		},
+	}
+	manifest := &Manifest{
+		Name: "publisher", Version: "0.1.0", MinCompozyVersion: "0.3.0-beta.1",
+		Resources: ResourcesConfig{Hooks: []HookConfig{
+			wantHook,
+			{
+				Name: "publisher-observer", Event: string(hookspkg.HookToolPreCall),
+				Mode:     string(hookspkg.HookModeAsync),
+				Executor: HookExecutorConfig{Kind: describeSubprocessKey, Command: "./bin/publisher"},
+			},
+		}},
+		Subprocess: SubprocessConfig{
+			Command: "./bin/publisher", Args: []string{"serve", "--stdio"},
+			Env: map[string]string{"BATUTA_MODE": "delivery"},
+		},
+	}
+
+	encoded, err := encodeManifestTOML(manifest)
+	if err != nil {
+		t.Fatalf("encodeManifestTOML() error = %v", err)
+	}
+	if got := strings.Count(string(encoded), "required = true"); got != 1 {
+		t.Fatalf("encoded required=true count = %d, want 1:\n%s", got, encoded)
+	}
+	if strings.Contains(string(encoded), "required = false") {
+		t.Fatalf("encoded manifest contains omitted false required value:\n%s", encoded)
+	}
+	if !strings.Contains(string(encoded), "tool_read_only = false") {
+		t.Fatalf("encoded manifest drops present false tool_read_only:\n%s", encoded)
+	}
+
+	reloaded, err := loadManifestTOMLContent("extension.toml", encoded)
+	if err != nil {
+		t.Fatalf("loadManifestTOMLContent() error = %v", err)
+	}
+	if got := reloaded.Resources.Hooks[0]; !reflect.DeepEqual(got, wantHook) {
+		t.Fatalf("reloaded hook = %#v, want %#v", got, wantHook)
+	}
+	if got := reloaded.Subprocess; !reflect.DeepEqual(got, manifest.Subprocess) {
+		t.Fatalf("reloaded subprocess = %#v, want %#v", got, manifest.Subprocess)
+	}
+}
+
 // Invariant: resources.cmd_palette is a closed, safe manifest family whose
 // references and authored strings are validated before an extension starts.
 // Owner: extension manifest loading and validation.

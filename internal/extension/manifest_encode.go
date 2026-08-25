@@ -178,6 +178,47 @@ func hookTOMLTable(hook *HookConfig) map[string]any {
 	putNonEmptyStrings(executor, manifestArgsKey, hook.Executor.Args)
 	putNonEmptyMap(executor, manifestEnvKey, hook.Executor.Env)
 	putNonEmpty(table, "profile", hook.Profile)
+	if hook.Required {
+		table[manifestRequiredKey] = true
+	}
+	if matcher := hookMatcherTOMLTable(hook.Matcher); len(matcher) > 0 {
+		table["matcher"] = matcher
+	}
+	return table
+}
+
+func hookMatcherTOMLTable(matcher HookMatcherConfig) map[string]any {
+	table := make(map[string]any)
+	for _, field := range []struct {
+		key   string
+		value string
+	}{
+		{key: "agent_name", value: matcher.AgentName},
+		{key: "agent_type", value: matcher.AgentType},
+		{key: "workspace_id", value: matcher.WorkspaceID},
+		{key: "workspace_root", value: matcher.WorkspaceRoot},
+		{key: "session_type", value: matcher.SessionType},
+		{key: "input_class", value: matcher.InputClass},
+		{key: "acp_event_type", value: matcher.ACPEventType},
+		{key: "turn_id", value: matcher.TurnID},
+		{key: "tool_id", value: matcher.ToolID},
+		{key: "tool_name", value: matcher.ToolName},
+		{key: "decision_class", value: matcher.DecisionClass},
+		{key: "message_role", value: matcher.MessageRole},
+		{key: "message_delta_type", value: matcher.MessageDeltaType},
+		{key: "channel", value: matcher.Channel},
+		{key: "surface", value: matcher.Surface},
+		{key: "kind", value: matcher.Kind},
+		{key: "direction", value: matcher.Direction},
+		{key: "work_state", value: matcher.WorkState},
+		{key: "compaction_reason", value: matcher.CompactionReason},
+		{key: "compaction_strategy", value: matcher.CompactionStrategy},
+	} {
+		putNonEmpty(table, field.key, field.value)
+	}
+	if matcher.ToolReadOnly != nil {
+		table["tool_read_only"] = *matcher.ToolReadOnly
+	}
 	return table
 }
 
