@@ -167,3 +167,37 @@ DELETE FROM loop_ui_annotations WHERE workspace_id = sqlc.arg(workspace_id) AND 
 -- name: InsertLoopUIAnnotation :exec
 INSERT INTO loop_ui_annotations (workspace_id, loop_name, node_id, x, y)
 VALUES (sqlc.arg(workspace_id), sqlc.arg(loop_name), sqlc.arg(node_id), sqlc.arg(x), sqlc.arg(y));
+
+-- name: GetLoopNestedRecovery :one
+SELECT operation_id, parent_run_id, parent_generation, parent_node_id, parent_item_index,
+       child_run_id, child_generation, child_node_id, child_item_index, task_id, runtime_json, created_at
+FROM loop_nested_recoveries
+WHERE workspace_id = sqlc.arg(workspace_id) AND operation_id = sqlc.arg(operation_id);
+
+-- name: GetLoopNestedRecoveryRuntime :one
+SELECT runtime_json
+FROM loop_nested_recoveries
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND child_run_id = sqlc.arg(child_run_id)
+  AND child_generation = sqlc.arg(child_generation)
+  AND child_node_id = sqlc.arg(child_node_id)
+  AND child_item_index = sqlc.arg(child_item_index);
+
+-- name: ListLoopNestedRecoveries :many
+SELECT operation_id, parent_run_id, parent_generation, parent_node_id, parent_item_index,
+       child_run_id, child_generation, child_node_id, child_item_index, task_id, runtime_json, created_at
+FROM loop_nested_recoveries
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND (parent_run_id = sqlc.arg(run_id) OR child_run_id = sqlc.arg(run_id))
+ORDER BY created_at ASC, operation_id ASC;
+
+-- name: InsertLoopNestedRecovery :exec
+INSERT INTO loop_nested_recoveries (
+  workspace_id, operation_id, parent_run_id, parent_generation, parent_node_id,
+  parent_item_index, child_run_id, child_generation, child_node_id, child_item_index,
+  task_id, runtime_json, created_at
+) VALUES (
+  sqlc.arg(workspace_id), sqlc.arg(operation_id), sqlc.arg(parent_run_id), sqlc.arg(parent_generation),
+  sqlc.arg(parent_node_id), sqlc.arg(parent_item_index), sqlc.arg(child_run_id), sqlc.arg(child_generation),
+  sqlc.arg(child_node_id), sqlc.arg(child_item_index), sqlc.arg(task_id), sqlc.arg(runtime_json), sqlc.arg(created_at)
+);

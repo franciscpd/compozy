@@ -72,3 +72,32 @@ type ForkLoopResponse struct {
 	Run      LoopRunPayload `json:"run"`
 	Replayed bool           `json:"replayed,omitempty"`
 }
+
+// RecoverNestedLoopRequest selects the ephemeral runtime for one failed direct child retry.
+type RecoverNestedLoopRequest struct {
+	RequestID string          `json:"request_id"`
+	Runtime   LoopRuntimeSpec `json:"runtime"`
+}
+
+// LoopNestedRecoveryPayload is the durable parent/child recovery projection.
+type LoopNestedRecoveryPayload struct {
+	OperationID      string              `json:"operation_id"`
+	ParentRunID      string              `json:"parent_run_id"`
+	ParentGeneration int64               `json:"parent_generation"`
+	ChildRunID       string              `json:"child_run_id"`
+	ChildGeneration  int64               `json:"child_generation"`
+	TaskID           string              `json:"task_id"`
+	Runtime          LoopResolvedRuntime `json:"runtime"`
+}
+
+// RecoverNestedLoopResponse returns the durable recovery projection plus replay state.
+type RecoverNestedLoopResponse struct {
+	OperationID      string              `json:"operation_id"`
+	ParentRunID      string              `json:"parent_run_id"`
+	ParentGeneration int64               `json:"parent_generation"`
+	ChildRunID       string              `json:"child_run_id"`
+	ChildGeneration  int64               `json:"child_generation"`
+	TaskID           string              `json:"task_id"`
+	Runtime          LoopResolvedRuntime `json:"runtime"`
+	Replayed         bool                `json:"replayed,omitempty"`
+}

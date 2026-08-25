@@ -1442,6 +1442,22 @@
     "output_schema_digest": "a2c799262a3ce3c19ef5cdd983bf3d12b43ab3c426227091b909dcb7054738c0"
   },
   {
+    "tool_id": "compozy__loop_recover_nested",
+    "native_name": "loop_recover_nested",
+    "toolsets": [
+      "compozy__loops"
+    ],
+    "risk": "mutating",
+    "read_only": false,
+    "destructive": false,
+    "open_world": false,
+    "input_schema_digest": "204c5eec2491f85410e51b819fe2161cb5523bb145d98110a543a0c166765bc7",
+    "output_schema_digest": "259d0d97112df8b770b6dae8c2e7b1bf4583877e63927d1be4fa889ccf1c1421",
+    "required_capabilities": [
+      "loops.timetravel"
+    ]
+  },
+  {
     "tool_id": "compozy__loop_request",
     "native_name": "loop_request",
     "toolsets": [

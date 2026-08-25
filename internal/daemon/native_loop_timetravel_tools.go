@@ -90,3 +90,31 @@ func (n *daemonNativeTools) loopFork(
 	}
 	return structuredResult(response, fmt.Sprintf("fork run %s created", response.Run.ID))
 }
+
+func (n *daemonNativeTools) loopRecoverNested(
+	ctx context.Context,
+	scope toolspkg.Scope,
+	request toolspkg.CallRequest,
+) (toolspkg.ToolResult, error) {
+	var input nativeLoopRecoverNestedInput
+	if err := decodeNativeInput(request, &input); err != nil {
+		return toolspkg.ToolResult{}, err
+	}
+	workspaceID, runID, err := n.nativeLoopWorkspaceAndRunID(
+		ctx, request.ToolID, input.WorkspaceID, input.RunID, scope,
+	)
+	if err != nil {
+		return toolspkg.ToolResult{}, err
+	}
+	actor, err := actorContextFromScope(scope)
+	if err != nil {
+		return toolspkg.ToolResult{}, nativeLoopToolError(request.ToolID, err)
+	}
+	response, err := n.loopService().RecoverNestedLoopRun(ctx, workspaceID, runID,
+		contract.RecoverNestedLoopRequest{RequestID: input.RequestID, Runtime: input.Runtime}, actor)
+	if err != nil {
+		return toolspkg.ToolResult{}, nativeLoopToolError(request.ToolID, err)
+	}
+	return structuredResult(response, fmt.Sprintf("nested recovery %s opened for child %s",
+		response.OperationID, response.ChildRunID))
+}

@@ -153,6 +153,7 @@ export function buildLoopRunDetailFixtures(
       waits: [],
       requests: [],
       amendments: [],
+      nested_recoveries: [],
     };
   });
 }

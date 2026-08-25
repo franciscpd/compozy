@@ -283,6 +283,7 @@ BEGIN
 	DELETE FROM loop_admission_claims WHERE workspace_id = OLD.id;
 	DELETE FROM loop_node_lane_pauses WHERE workspace_id = OLD.id;
 	DELETE FROM loop_node_amendments WHERE workspace_id = OLD.id;
+	DELETE FROM loop_nested_recoveries WHERE workspace_id = OLD.id;
 	DELETE FROM loop_timetravel_ops WHERE workspace_id = OLD.id;
 	DELETE FROM loop_requests WHERE workspace_id = OLD.id;
 	DELETE FROM loop_gate_decisions WHERE workspace_id = OLD.id;

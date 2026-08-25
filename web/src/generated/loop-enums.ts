@@ -102,6 +102,7 @@ const LOOP_GENERATION_ORIGINS = [
   "requeue",
   "operator_rerun",
   "fork_seed",
+  "nested_recovery",
 ] as const;
 
 export type LoopGenerationOriginValue = (typeof LOOP_GENERATION_ORIGINS)[number];

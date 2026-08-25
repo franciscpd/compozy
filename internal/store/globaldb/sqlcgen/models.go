@@ -836,6 +836,22 @@ type LoopGoalTurn struct {
 	EndedAt         sql.NullTime   `json:"ended_at"`
 }
 
+type LoopNestedRecovery struct {
+	WorkspaceID      string    `json:"workspace_id"`
+	OperationID      string    `json:"operation_id"`
+	ParentRunID      string    `json:"parent_run_id"`
+	ParentGeneration int64     `json:"parent_generation"`
+	ParentNodeID     string    `json:"parent_node_id"`
+	ParentItemIndex  int64     `json:"parent_item_index"`
+	ChildRunID       string    `json:"child_run_id"`
+	ChildGeneration  int64     `json:"child_generation"`
+	ChildNodeID      string    `json:"child_node_id"`
+	ChildItemIndex   int64     `json:"child_item_index"`
+	TaskID           string    `json:"task_id"`
+	RuntimeJson      string    `json:"runtime_json"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
 type LoopNodeAmendment struct {
 	WorkspaceID  string         `json:"workspace_id"`
 	LoopRunID    string         `json:"loop_run_id"`

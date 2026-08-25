@@ -252,7 +252,8 @@ func mergeConfigLayer(effective *EffectiveConfig, layer LoopConfig) {
 }
 
 func validateEffectiveConfig(cfg EffectiveConfig) error {
-	if cfg.ReattemptStrategy != ReattemptFailedOnly && cfg.ReattemptStrategy != ReattemptFullBody {
+	if cfg.ReattemptStrategy != ReattemptFailedOnly && cfg.ReattemptStrategy != ReattemptFullBody &&
+		cfg.ReattemptStrategy != ReattemptHalt {
 		return fmt.Errorf("%w: reattempt_strategy is invalid: %q", ErrValidation, cfg.ReattemptStrategy)
 	}
 	switch cfg.BudgetOnExceeded {

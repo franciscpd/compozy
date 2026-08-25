@@ -132,6 +132,13 @@ type LoopService interface {
 		contract.ForkLoopRequest,
 		taskpkg.ActorContext,
 	) (contract.ForkLoopResponse, error)
+	RecoverNestedLoopRun(
+		context.Context,
+		string,
+		string,
+		contract.RecoverNestedLoopRequest,
+		taskpkg.ActorContext,
+	) (contract.RecoverNestedLoopResponse, error)
 	GetSessionGoal(ctx context.Context, workspaceID string, sessionID string) (*session.GoalSnapshot, error)
 	ListGoalTurns(
 		ctx context.Context,

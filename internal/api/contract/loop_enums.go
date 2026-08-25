@@ -153,6 +153,7 @@ func LoopRunTransitionCauseValues() []string {
 		string(LoopRunTransitionCauseWatchEvents),
 		string(LoopRunTransitionCauseCoordinatorFailure),
 		string(LoopRunTransitionCauseOperatorRerun),
+		string(LoopRunTransitionCauseNestedRecovery),
 	}
 }
 
@@ -169,6 +170,7 @@ func LoopGenerationOriginValues() []string {
 		string(LoopGenerationOriginRequeue),
 		string(LoopGenerationOriginOperatorRerun),
 		string(LoopGenerationOriginForkSeed),
+		string(LoopGenerationOriginNestedRecovery),
 	}
 }
 

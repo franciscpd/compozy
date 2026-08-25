@@ -113,6 +113,8 @@ const (
 	TransitionCauseCoordinatorFailure TransitionCause = "coordinator_failure"
 	// TransitionCauseOperatorRerun records reactivation from a settled generation.
 	TransitionCauseOperatorRerun TransitionCause = "operator_rerun"
+	// TransitionCauseNestedRecovery records same-lineage child recovery reactivation.
+	TransitionCauseNestedRecovery TransitionCause = "nested_recovery"
 )
 
 // GateDecision is the closed approval decision vocabulary consumed by Approve.
@@ -135,6 +137,8 @@ const (
 	ReattemptFailedOnly ReattemptStrategy = "failed_only"
 	// ReattemptFullBody retries the whole generation body.
 	ReattemptFullBody ReattemptStrategy = "full_body"
+	// ReattemptHalt settles the run as failed without creating another generation.
+	ReattemptHalt ReattemptStrategy = "halt"
 )
 
 // CompletionState records whether a terminal run satisfied full or partial coverage.
@@ -465,4 +469,5 @@ type TimeTravelService interface {
 	DiffRun(ctx context.Context, workspaceID WorkspaceID, query DiffQuery) (DiffResult, error)
 	RerunFromNode(ctx context.Context, input RerunInput) (RerunResult, error)
 	ForkRun(ctx context.Context, input ForkInput) (StartResult, error)
+	RecoverNestedLoop(ctx context.Context, input NestedRecoveryInput) (NestedRecoveryResult, error)
 }

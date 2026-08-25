@@ -15,6 +15,10 @@ var loopTimeTravelTools = []toolspkg.Descriptor{
 		"Create a linked run from one historical generation.", loopForkInputSchema,
 		toolspkg.RiskMutating, false, false, []string{loopKey, "fork", historyTag},
 		[]string{"fork loop run", "start from generation"}),
+	nativeLoopDescriptor(toolspkg.ToolIDLoopRecoverNested, "loop_recover_nested", "Loop Recover Nested",
+		"Recover one failed direct child with an ephemeral runtime.", loopRecoverNestedInputSchema,
+		toolspkg.RiskMutating, false, false, []string{loopKey, "recover", historyTag},
+		[]string{"recover nested loop", "retry failed child loop"}),
 }
 
 const loopDiffInputSchema = `{"type":"object","required":["run_id"],"additionalProperties":false,"properties":{"workspace":{"type":"string"},"run_id":{"type":"string","minLength":1},"generation":{"type":"integer","minimum":1},"against_generation":{"type":"integer","minimum":1},"against_run":{"type":"string","minLength":1}}}`
@@ -22,6 +26,8 @@ const loopDiffInputSchema = `{"type":"object","required":["run_id"],"additionalP
 const loopRerunInputSchema = `{"type":"object","required":["run_id","from_node"],"additionalProperties":false,"properties":{"workspace":{"type":"string"},"run_id":{"type":"string","minLength":1},"from_node":{"type":"string","minLength":1},"item_index":{"type":"integer","minimum":0},"reason":{"type":"string"},"request_id":{"type":"string"}}}`
 
 const loopForkInputSchema = `{"type":"object","required":["run_id","generation"],"additionalProperties":false,"properties":{"workspace":{"type":"string"},"run_id":{"type":"string","minLength":1},"generation":{"type":"integer","minimum":1},"inputs":{"type":"object"},"reason":{"type":"string"},"request_id":{"type":"string"}}}`
+
+const loopRecoverNestedInputSchema = `{"type":"object","required":["run_id","request_id","runtime"],"additionalProperties":false,"properties":{"workspace":{"type":"string"},"run_id":{"type":"string","minLength":1},"request_id":{"type":"string","minLength":1},"runtime":{"type":"object","required":["provider","model"],"additionalProperties":false,"properties":{"provider":{"type":"string","minLength":1},"model":{"type":"string","minLength":1},"reasoning":{"type":"string"},"speed":{"type":"string","enum":["normal","fast"]}}}}}`
 
 const loopDiffEndpointSchema = `{
 	"type":"object",
@@ -104,6 +110,22 @@ const loopForkOutputSchema = `{
 			"required":["id","workspace_id","loop_name","status","completion_state","generation"],
 			"additionalProperties":true
 		},
+		"replayed":{"type":"boolean"}
+	},
+	"additionalProperties":false
+}`
+
+const loopRecoverNestedOutputSchema = `{
+	"type":"object",
+	"required":["operation_id","parent_run_id","parent_generation","child_run_id","child_generation","task_id","runtime"],
+	"properties":{
+		"operation_id":{"type":"string","minLength":1},
+		"parent_run_id":{"type":"string","minLength":1},
+		"parent_generation":{"type":"integer","minimum":1},
+		"child_run_id":{"type":"string","minLength":1},
+		"child_generation":{"type":"integer","minimum":1},
+		"task_id":{"type":"string","minLength":1},
+		"runtime":{"type":"object","required":["source"],"additionalProperties":true},
 		"replayed":{"type":"boolean"}
 	},
 	"additionalProperties":false

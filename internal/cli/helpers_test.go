@@ -317,6 +317,13 @@ type stubClient struct {
 		contract.RespondLoopRequest,
 		agentidentity.Credentials,
 	) (contract.RespondLoopRequestResponse, error)
+	recoverNestedLoopRunFn func(
+		context.Context,
+		string,
+		string,
+		contract.RecoverNestedLoopRequest,
+		agentidentity.Credentials,
+	) (contract.RecoverNestedLoopResponse, error)
 	listAgentsFn                func(context.Context, AgentQuery) ([]AgentRecord, error)
 	getAgentFn                  func(context.Context, string, AgentQuery) (AgentRecord, error)
 	createAgentFn               func(context.Context, contract.CreateAgentRequest) (AgentRecord, error)
@@ -2571,6 +2578,19 @@ func (s *stubClient) ForkLoopRun(
 	context.Context, string, string, contract.ForkLoopRequest, agentidentity.Credentials,
 ) (contract.ForkLoopResponse, error) {
 	return contract.ForkLoopResponse{}, errors.New("unexpected ForkLoopRun call")
+}
+
+func (s *stubClient) RecoverNestedLoopRun(
+	ctx context.Context,
+	workspaceID string,
+	runID string,
+	request contract.RecoverNestedLoopRequest,
+	credentials agentidentity.Credentials,
+) (contract.RecoverNestedLoopResponse, error) {
+	if s.recoverNestedLoopRunFn == nil {
+		return contract.RecoverNestedLoopResponse{}, errors.New("unexpected RecoverNestedLoopRun call")
+	}
+	return s.recoverNestedLoopRunFn(ctx, workspaceID, runID, request, credentials)
 }
 
 func (s *stubClient) CancelLoopRun(

@@ -64,6 +64,8 @@ func StatusForLoopError(err error) int {
 		errors.Is(err, looppkg.ErrDefinitionExists),
 		errors.Is(err, looppkg.ErrRequestAlreadyAnswered),
 		errors.Is(err, looppkg.ErrRerunBusy),
+		errors.Is(err, looppkg.ErrNestedRecoveryConflict),
+		errors.Is(err, looppkg.ErrNestedRecoveryBudgetExhausted),
 		errors.Is(err, looppkg.ErrTimeTravelKeyReuse):
 		return http.StatusConflict
 	case errors.Is(err, looppkg.ErrDefinitionNotFound),

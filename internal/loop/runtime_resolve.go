@@ -24,6 +24,7 @@ func ResolveItemRuntime(layers RuntimeLayers, item ItemRuntime) (ResolvedRuntime
 	applyRuntime(&resolved, item.Input, RuntimeSourceInput)
 	applyRuntime(&resolved, item.Frontmatter, RuntimeSourceFrontmatter)
 	applyRuntime(&resolved, resolveMatchingRuntime(layers.RunRules, item), RuntimeSourceRun)
+	applyRuntime(&resolved, item.Recovery, RuntimeSourceRecovery)
 	return normalizeResolvedRuntime(resolved), nil
 }
 

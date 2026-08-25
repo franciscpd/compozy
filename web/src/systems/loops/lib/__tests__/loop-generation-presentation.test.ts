@@ -53,6 +53,7 @@ describe("loopGenerationOriginLabel", () => {
   it("Should name where a round came from in words", () => {
     expect(loopGenerationOriginLabel("initial", 0)).toBe("Initial generation");
     expect(loopGenerationOriginLabel("ratchet_restore", 2)).toBe("Restored from gen 2");
+    expect(loopGenerationOriginLabel("nested_recovery", 2)).toBe("Nested recovery");
   });
 });
 

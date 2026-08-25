@@ -103,6 +103,41 @@ func newLoopForkCommand(deps commandDeps) *cobra.Command {
 	return cmd
 }
 
+func newLoopRecoverNestedCommand(deps commandDeps) *cobra.Command {
+	var workspaceRef, runID, requestID, runtimeFile string
+	cmd := &cobra.Command{
+		Use: loopRecoverNestedKey, Short: "Recover one failed direct child Loop run", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client, workspaceID, err := loopClientAndWorkspace(cmd, deps, workspaceRef)
+			if err != nil {
+				return err
+			}
+			runtime, err := readLoopRuntimeFile(runtimeFile)
+			if err != nil {
+				return err
+			}
+			response, err := client.RecoverNestedLoopRun(
+				cmd.Context(), workspaceID, strings.TrimSpace(runID),
+				contract.RecoverNestedLoopRequest{RequestID: strings.TrimSpace(requestID), Runtime: runtime},
+				agentCredentialsFromEnv(deps),
+			)
+			if err != nil {
+				return err
+			}
+			return writeCommandOutput(cmd, loopOutputBundle(response,
+				fmt.Sprintf("nested recovery · %s · child %s", response.OperationID, response.ChildRunID)))
+		},
+	}
+	cmd.Flags().StringVar(&workspaceRef, loopWorkspaceKey, "", "Override workspace (ID, name, or path)")
+	cmd.Flags().StringVar(&runID, "run", "", "Parent Loop run ID")
+	cmd.Flags().StringVar(&requestID, "request-id", "", "Required idempotency key")
+	cmd.Flags().StringVar(&runtimeFile, "runtime-file", "", "Internal JSON runtime selection file")
+	mustMarkFlagRequired(cmd, "run")
+	mustMarkFlagRequired(cmd, "request-id")
+	mustMarkFlagRequired(cmd, "runtime-file")
+	return cmd
+}
+
 func addLoopTimeTravelRunFlags(cmd *cobra.Command, workspaceRef, runID *string) {
 	cmd.Flags().StringVar(workspaceRef, loopWorkspaceKey, "", "Override workspace (ID, name, or path)")
 	cmd.Flags().StringVar(runID, loopRunIDKey, "", "Loop run ID")

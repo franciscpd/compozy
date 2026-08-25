@@ -99,6 +99,35 @@ func (h *BaseHandlers) ForkLoopRun(c *gin.Context) {
 	c.JSON(http.StatusCreated, response)
 }
 
+func (h *BaseHandlers) RecoverNestedLoopRun(c *gin.Context) {
+	service, ok := h.requireLoopService(c)
+	if !ok {
+		return
+	}
+	if !h.requireLoopRunProfile(c, service, true) {
+		return
+	}
+	var request contract.RecoverNestedLoopRequest
+	if err := decodeStrictLoopJSONBody(c, &request); err != nil {
+		h.respondLoopError(c, fmt.Errorf("%w: decode nested Loop recovery: %v", looppkg.ErrValidation, err))
+		return
+	}
+	workspaceID := c.Param("workspace_id")
+	actor, err := h.taskActorContextForWorkspace(c, loopActionTimeTravel, workspaceID)
+	if err != nil {
+		h.respondError(c, StatusForTaskError(err), err)
+		return
+	}
+	response, err := service.RecoverNestedLoopRun(
+		c.Request.Context(), workspaceID, c.Param("run_id"), request, actor,
+	)
+	if err != nil {
+		h.respondLoopError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, response)
+}
+
 func parseLoopGenerationQuery(raw string) (int64, error) {
 	if strings.TrimSpace(raw) == "" {
 		return 0, nil

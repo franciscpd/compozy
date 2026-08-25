@@ -301,6 +301,41 @@ func TestResolveItemRuntimeShouldMergeFieldsByPrecedence(t *testing.T) {
 	})
 }
 
+func TestResolveItemRuntimeShouldApplyRecoveryAfterEveryAuthoredLayer(t *testing.T) {
+	t.Parallel()
+
+	got := resolveRuntimeForTest(t, loop.RuntimeLayers{
+		Defaults: loop.RuntimeSpec{Provider: "default", Model: "default", Reasoning: "low"},
+		ConfigRules: []loop.RuntimeRule{{
+			Match:   loop.RuntimeMatch{Type: "backend", Complexity: "high"},
+			Runtime: loop.RuntimeSpec{Provider: "matrix", Model: "matrix", Reasoning: "medium"},
+		}},
+		RunRules: []loop.RuntimeRule{{
+			Match:   loop.RuntimeMatch{ID: "task-1"},
+			Runtime: loop.RuntimeSpec{Provider: "run", Model: "run", Reasoning: "high"},
+		}},
+	}, loop.ItemRuntime{
+		TaskID: "task-1", TaskType: "backend", Complexity: "high",
+		Node:        loop.RuntimeSpec{Provider: "node", Model: "node"},
+		Input:       loop.RuntimeSpec{Provider: "input", Model: "input"},
+		Frontmatter: loop.RuntimeSpec{Provider: "frontmatter", Model: "frontmatter"},
+		Recovery: loop.RuntimeSpec{
+			Provider: "recovery-provider", Model: "recovery-model", Reasoning: "max",
+			Speed: speedpkg.SpeedFast,
+		},
+	})
+	assertResolvedRuntime(t, got,
+		loop.RuntimeSpec{
+			Provider: "recovery-provider", Model: "recovery-model", Reasoning: "max",
+			Speed: speedpkg.SpeedFast,
+		},
+		loop.RuntimeProvenance{
+			Provider: loop.RuntimeSourceRecovery, Model: loop.RuntimeSourceRecovery,
+			Reasoning: loop.RuntimeSourceRecovery, Speed: loop.RuntimeSourceRecovery,
+		},
+	)
+}
+
 func resolveRuntimeForTest(t *testing.T, layers loop.RuntimeLayers, item loop.ItemRuntime) loop.ResolvedRuntime {
 	t.Helper()
 	resolved, err := loop.ResolveItemRuntime(layers, item)

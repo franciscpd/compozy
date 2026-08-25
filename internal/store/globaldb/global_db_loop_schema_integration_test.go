@@ -158,6 +158,9 @@ func TestOpenGlobalDBBootstrapsLoopSchemaIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("Should preserve rerun fork and generation rows through nested recovery migration",
+		testNestedRecoveryMigrationPreservesHistory)
+
 	t.Run("Should upgrade v38 loop rows and preserve lifecycle defaults after reopen", func(t *testing.T) {
 		t.Parallel()
 

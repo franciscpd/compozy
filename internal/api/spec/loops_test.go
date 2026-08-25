@@ -36,6 +36,16 @@ func TestLoopOpenAPIContract(t *testing.T) {
 		)
 	})
 
+	t.Run("Should expose the closed Loop reattempt strategy vocabulary", func(t *testing.T) {
+		t.Parallel()
+
+		assertStringSetEqual(
+			t,
+			schemaEnumValues[reflect.TypeFor[contract.LoopReattemptStrategy]()],
+			[]string{"failed_only", "full_body", "halt"},
+		)
+	})
+
 	t.Run("Should keep zero-omitted Loop fields optional", func(t *testing.T) {
 		t.Parallel()
 

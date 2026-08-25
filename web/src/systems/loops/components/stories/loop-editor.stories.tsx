@@ -316,6 +316,7 @@ export const NodeEnvironmentWorktree: Story = {
         compozyApiMock.get("/api/workspaces/{workspace_id}/loops/{name}/config", () =>
           HttpResponse.json({
             config: { ...loopConfigFixture, environment: { mode: "root" } },
+            config_revision: 1,
             effective_config: { ...loopEffectiveConfigFixture, environment: { mode: "root" } },
           })
         ),
@@ -364,6 +365,7 @@ export const NodeEnvironmentReadout: Story = {
         compozyApiMock.get("/api/workspaces/{workspace_id}/loops/{name}/config", () =>
           HttpResponse.json({
             config: { ...loopConfigFixture, environment: { mode: "per_run" } },
+            config_revision: 1,
             effective_config: { ...loopEffectiveConfigFixture, environment: { mode: "per_run" } },
           })
         ),

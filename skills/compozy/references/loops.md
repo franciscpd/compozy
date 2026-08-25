@@ -16,7 +16,7 @@ structured output. Never guess a schema — resolve `compozy__tool_info` for the
 
 ## The Tool Set And CLI Verbs
 
-Toolset `compozy__loops` — 31 native tools. All 28 Loop tools have matching `compozy loop` verbs;
+Toolset `compozy__loops` — 32 native tools. All 29 Loop tools have matching `compozy loop` verbs;
 the three session-bound Goal tools use the session command/native control and report surfaces. The CLI also exposes
 operator-focused `config`, `edit`, `why`, `events`, and run-scoped `nodes` reads without new native tool IDs.
 
@@ -34,6 +34,7 @@ operator-focused `config`, `edit`, `why`, `events`, and run-scoped `nodes` reads
 | `compozy__loop_diff`         | read                            | `compozy loop diff`         | Compare generations or same-Loop runs.                                                 |
 | `compozy__loop_rerun`        | mutating · **capability-gated** | `compozy loop rerun`        | Rerun one settled node and its dependents.                                             |
 | `compozy__loop_fork`         | mutating · **capability-gated** | `compozy loop fork`         | Create a linked run from a historical generation.                                      |
+| `compozy__loop_recover_nested` | mutating · **capability-gated** | `compozy loop recover-nested` | Recover one failed direct child with an exact ephemeral runtime.                     |
 | `compozy__loop_create`       | mutating                        | `compozy loop create`       | Create/fork, or CAS-publish when `expected_version` is set.                            |
 | `compozy__loop_run`          | mutating                        | `compozy loop run`          | Start a run, or dry-run with `dry: true` / `--dry-run`.                                |
 | —                            | read                            | `compozy loop config`       | Read stored/effective config plus its revision without mutation.                       |
@@ -178,7 +179,7 @@ Use `compozy loop status` / `compozy__loop_status` for detail. The run carries i
 `generation` plus optional `best_generation`/`best_score`; `generations[]` carries durable
 `parent_generation`, `origin`, `verdicts[]`, and outputs. Origins are `initial`, `stop_when`,
 `reattempt`, `gate_revise`, `gate_next_generation`, `dod_retry`, `ratchet_restore`, `requeue`,
-`operator_rerun`, and `fork_seed`. Each verdict
+`operator_rerun`, `fork_seed`, and `nested_recovery`. Each verdict
 has `gate_id`, machine `outcome`, optional `score`, and optional `route_cause_rank`. The list surfaces
 remain summaries; use status when an agent needs the lineage or gate decisions.
 
@@ -193,6 +194,18 @@ run whose settled generation 1 is `fork_seed` and whose full body first executes
 and fork require `loops.timetravel`; an agent cannot apply either operation to its own executing run.
 Pass `request_id` for replay-safe transport retries. The same key with different arguments returns
 `timetravel_key_reuse`; omitting it creates a fresh operation.
+
+Use `compozy__loop_recover_nested` when a terminal parent is still bound to a terminal failed direct
+child from an awaited `run-loop` cell. Supply only the parent `run_id`, required `request_id`, and a
+closed exact `runtime` (`provider` + `model`, with optional `reasoning`/`speed`). The daemon derives the
+child, failed item, task ID, generations, budgets, and stored configuration. It reuses both run IDs,
+carries successful siblings, applies the runtime only to the selected child generation cell, and records
+`recovery` provenance. Status for either run returns the same ordered `nested_recoveries` evidence.
+Replay is mandatory-key safe; lineage races, pause/cancel state, or exhausted original budgets return a
+conflict without mutation.
+Set the owning Loops' stored `reattempt_strategy` to the explicit `halt` value when recovery needs a
+naturally settled failed lineage. `halt` ends the failed generation without quarantine or an automatic
+successor; the default remains `failed_only`, and `full_body` keeps its existing behavior.
 
 ## The Authoring Loop
 
@@ -382,6 +395,7 @@ Node failure and gate rejection use different controls:
 | -------------------------------- | --------------------------------------------------------------------------------- | ---------------------- |
 | Node failure, `failed_only`      | Failed/pending nodes plus transitive dependents rerun; unrelated successes carry. | `reattempt`            |
 | Node failure, `full_body`        | Every body node reruns.                                                           | `reattempt`            |
+| Node failure, `halt`             | Settle the current generation `failed`; do not quarantine or create a successor.  | No successor           |
 | In-body gate `revise`            | Producers of every route-causing gate, those gates, and dependents rerun.         | `gate_revise`          |
 | Metric-gate `revise` with a best | The producer-scoped repair carries unrelated outputs from the best baseline.      | `ratchet_restore`      |
 | In-body gate `next_generation`   | A fresh full-body generation starts.                                              | `gate_next_generation` |

@@ -112,5 +112,15 @@ func loopTimeTravelOperations() []OperationSpec {
 				internalError(),
 			},
 		),
+		loopOperation(
+			httpMethodPost,
+			loopRunPath()+"/recover-nested",
+			"recoverNestedLoopRun",
+			"Recover one failed direct child Loop run in the same lineage",
+			contract.RecoverNestedLoopRequest{},
+			withProfileSelector(workspaceIDParam(), loopRunIDParam()),
+			[]ResponseSpec{ok(contract.RecoverNestedLoopResponse{}), badRequest(), forbidden(),
+				notFound(specLoopRunNotFound), conflict(), loopUnprocessable(), loopUnavailable(), internalError()},
+		),
 	}
 }

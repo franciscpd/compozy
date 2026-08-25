@@ -21,6 +21,7 @@ const (
 	LoopGenerationOriginRequeue            LoopGenerationOrigin = "requeue"
 	LoopGenerationOriginOperatorRerun      LoopGenerationOrigin = "operator_rerun"
 	LoopGenerationOriginForkSeed           LoopGenerationOrigin = "fork_seed"
+	LoopGenerationOriginNestedRecovery     LoopGenerationOrigin = "nested_recovery"
 )
 
 type LoopForkRef struct {
@@ -117,14 +118,15 @@ type LoopRunsAggregatePayload struct {
 
 // LoopRunResponse returns one run with generation detail.
 type LoopRunResponse struct {
-	Run                  LoopRunPayload             `json:"run"`
-	ExecutedDefinition   *LoopDefinitionDocument    `json:"executed_definition,omitempty"`
-	MaterializedContract LoopContract               `json:"materialized_contract"`
-	Generations          []LoopGenerationPayload    `json:"generations,omitempty"`
-	NodeControls         []LoopNodeControlPayload   `json:"node_controls"`
-	Waits                []LoopNodeWaitPayload      `json:"waits"`
-	Requests             []LoopRequestPayload       `json:"requests"`
-	Amendments           []LoopNodeAmendmentPayload `json:"amendments"`
+	Run                  LoopRunPayload              `json:"run"`
+	ExecutedDefinition   *LoopDefinitionDocument     `json:"executed_definition,omitempty"`
+	MaterializedContract LoopContract                `json:"materialized_contract"`
+	Generations          []LoopGenerationPayload     `json:"generations,omitempty"`
+	NodeControls         []LoopNodeControlPayload    `json:"node_controls"`
+	Waits                []LoopNodeWaitPayload       `json:"waits"`
+	Requests             []LoopRequestPayload        `json:"requests"`
+	Amendments           []LoopNodeAmendmentPayload  `json:"amendments"`
+	NestedRecoveries     []LoopNestedRecoveryPayload `json:"nested_recoveries"`
 	// WatchEvents is the parked watch-events read-model (present only while dormant).
 	WatchEvents *LoopWatchEventsState `json:"watch_events,omitempty"`
 }

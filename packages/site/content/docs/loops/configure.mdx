@@ -17,13 +17,16 @@ The sheet has four groups, all scoped to the checks and limits the Loop already 
   removed here — that is structure.
 - **Human approval gate** — a single switch to require, or drop, a human approval before the Loop
   finishes.
-- **Re-attempt strategy** — `failed-only` (the default; retry only what failed) or `full-body`
-  (re-run the whole body). This is where re-attempt granularity is chosen, not on the run form.
+- **Re-attempt strategy** — `failed-only` (the default; retry only what failed), `full-body`
+  (re-run the whole body), or `halt`. `halt` settles a failed generation as `failed` without
+  quarantine, another generation, or another coordinator reservation. This is where failure
+  succession is chosen, not on the run form.
 - **Stop limits** — the same six numeric limits as the run form's folded Limits panel, each clamped at
   its daemon ceiling. Configure sets the per-Loop **default**; the run form can still override per
   run.
 
-**Reset to defaults** restores the definition defaults and `failed-only`. **Save** persists the
+**Reset to defaults** restores the definition defaults and `failed-only`. Existing Loops therefore
+keep their current retry behavior unless `halt` is selected explicitly. **Save** persists the
 overlay.
 
 ## What needs a fork

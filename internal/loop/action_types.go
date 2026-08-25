@@ -138,6 +138,7 @@ type ActionRuntimeSelection struct {
 	Defaults    RuntimeDefaults
 	ConfigRules []RuntimeRule
 	RunRules    []RuntimeRule
+	Recovery    RuntimeSpec
 	Catalog     RuntimeCatalog
 	Recorder    ActionAppliedRuntimeRecorder
 }

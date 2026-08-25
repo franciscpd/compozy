@@ -422,9 +422,10 @@ func loopNodeTerminalWakeKey(payload hookspkg.TaskRunLeasePayload) string {
 
 func loopParentAwaitWakeKey(payload hookspkg.LoopTerminalPayload) string {
 	return fmt.Sprintf(
-		"loop.coordinator.child_terminal.%s.%s",
+		"loop.coordinator.child_terminal.%s.%s.g%d",
 		strings.TrimSpace(payload.ParentLoopRunID),
 		strings.TrimSpace(payload.LoopRunID),
+		payload.Generation,
 	)
 }
 

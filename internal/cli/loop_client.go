@@ -94,6 +94,9 @@ type loopCommandClient interface {
 	ForkLoopRun(
 		context.Context, string, string, contract.ForkLoopRequest, agentidentity.Credentials,
 	) (contract.ForkLoopResponse, error)
+	RecoverNestedLoopRun(
+		context.Context, string, string, contract.RecoverNestedLoopRequest, agentidentity.Credentials,
+	) (contract.RecoverNestedLoopResponse, error)
 	CancelLoopRun(
 		ctx context.Context,
 		workspaceID string,

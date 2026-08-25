@@ -49,6 +49,18 @@ func readLoopDefinitionFile(ctx context.Context, path string) (dsl.Definition, e
 	return definition, nil
 }
 
+func readLoopRuntimeFile(path string) (contract.LoopRuntimeSpec, error) {
+	body, err := os.ReadFile(strings.TrimSpace(path))
+	if err != nil {
+		return contract.LoopRuntimeSpec{}, fmt.Errorf("cli: read Loop runtime file: %w", err)
+	}
+	var runtime contract.LoopRuntimeSpec
+	if err := json.Unmarshal(body, &runtime); err != nil {
+		return contract.LoopRuntimeSpec{}, fmt.Errorf("cli: parse Loop runtime file: %w", err)
+	}
+	return runtime, nil
+}
+
 func loopDefinitionDocumentFromDefinition(definition dsl.Definition) (contract.LoopDefinitionDocument, error) {
 	document, err := contract.NewLoopDefinitionDocument(definition)
 	if err != nil {

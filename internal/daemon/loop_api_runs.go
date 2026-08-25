@@ -151,6 +151,10 @@ func (s *daemonLoopAPIService) GetLoopRun(
 	if err != nil {
 		return contract.LoopRunResponse{}, err
 	}
+	nestedRecoveries, err := s.loopRunNestedRecoveries(ctx, ws, run.ID)
+	if err != nil {
+		return contract.LoopRunResponse{}, err
+	}
 	return contract.LoopRunResponse{
 		Run:                  payload,
 		ExecutedDefinition:   &executedDefinition,
@@ -160,8 +164,43 @@ func (s *daemonLoopAPIService) GetLoopRun(
 		Waits:                waits,
 		Requests:             requests,
 		Amendments:           amendments,
+		NestedRecoveries:     nestedRecoveries,
 		WatchEvents:          watchEvents,
 	}, nil
+}
+
+func (s *daemonLoopAPIService) loopRunNestedRecoveries(
+	ctx context.Context,
+	workspaceID looppkg.WorkspaceID,
+	runID looppkg.RunID,
+) ([]contract.LoopNestedRecoveryPayload, error) {
+	reader, ok := s.persistence.(looppkg.NestedRecoveryStore)
+	if !ok {
+		return []contract.LoopNestedRecoveryPayload{}, nil
+	}
+	results, err := reader.ListNestedRecoveries(ctx, workspaceID, runID)
+	if err != nil {
+		return nil, err
+	}
+	return loopNestedRecoveryPayloads(results), nil
+}
+
+func loopNestedRecoveryPayloads(results []looppkg.NestedRecoveryResult) []contract.LoopNestedRecoveryPayload {
+	payloads := make([]contract.LoopNestedRecoveryPayload, 0, len(results))
+	for index := range results {
+		result := &results[index]
+		runtime := loopResolvedRuntimePayload(&result.Runtime)
+		payloads = append(payloads, contract.LoopNestedRecoveryPayload{
+			OperationID:      result.OperationID,
+			ParentRunID:      string(result.ParentRunID),
+			ParentGeneration: result.ParentGeneration,
+			ChildRunID:       string(result.ChildRunID),
+			ChildGeneration:  result.ChildGeneration,
+			TaskID:           result.TaskID,
+			Runtime:          *runtime,
+		})
+	}
+	return payloads
 }
 
 func (s *daemonLoopAPIService) loadExecutedLoopDefinition(

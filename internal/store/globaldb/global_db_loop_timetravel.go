@@ -90,6 +90,7 @@ func (g *LoopRepo) ListForks(
 }
 
 type storedTimeTravelReplay struct {
+	operationID      string
 	kind             string
 	digest           string
 	resultRunID      looppkg.RunID
@@ -107,10 +108,11 @@ func getTimeTravelReplay(
 		return storedTimeTravelReplay{}, false, nil
 	}
 	var replay storedTimeTravelReplay
-	err := exec.QueryRowContext(ctx, `SELECT kind, request_digest, result_run_id, result_generation,
+	err := exec.QueryRowContext(ctx, `SELECT op_id, kind, request_digest, result_run_id, result_generation,
 		source_generation FROM loop_timetravel_ops WHERE workspace_id = ? AND idempotency_key = ?`,
 		workspaceID, strings.TrimSpace(key)).Scan(
-		&replay.kind, &replay.digest, &replay.resultRunID, &replay.resultGeneration, &replay.sourceGeneration,
+		&replay.operationID, &replay.kind, &replay.digest, &replay.resultRunID,
+		&replay.resultGeneration, &replay.sourceGeneration,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return storedTimeTravelReplay{}, false, nil

@@ -741,6 +741,21 @@ func TestBuiltinNativeDescriptors(t *testing.T) {
 		diff := descriptors[toolspkg.ToolIDLoopDiff]
 		rerun := descriptors[toolspkg.ToolIDLoopRerun]
 		fork := descriptors[toolspkg.ToolIDLoopFork]
+		recoverNested := descriptors[toolspkg.ToolIDLoopRecoverNested]
+		var recoverNestedInput nativeObjectSchema
+		if err := json.Unmarshal(recoverNested.InputSchema, &recoverNestedInput); err != nil {
+			t.Fatalf("loop_recover_nested input schema unmarshal error = %v", err)
+		}
+		var recoverNestedRuntime nativeObjectSchema
+		if err := json.Unmarshal(recoverNestedInput.Properties["runtime"], &recoverNestedRuntime); err != nil {
+			t.Fatalf("loop_recover_nested runtime schema unmarshal error = %v", err)
+		}
+		assertStringEnumSchema(
+			t,
+			"loop_recover_nested runtime speed",
+			recoverNestedRuntime.Properties["speed"],
+			[]string{"normal", "fast"},
+		)
 		assertNativeOutputSchemaAccepts(t, status, `{
 			"run":{"id":"run-1","completion_state":"partial","best_generation":2,"best_score":0.91},
 			"materialized_contract":{"goal":"Ship weather-app","definition_of_done":"All tasks complete"},
@@ -829,6 +844,12 @@ func TestBuiltinNativeDescriptors(t *testing.T) {
 		}`)
 		assertNativeOutputSchemaAccepts(t, fork, `{
 			"run":{"id":"run-2","workspace_id":"ws-1","loop_name":"review","status":"running","completion_state":"complete","generation":1},
+			"replayed":false
+		}`)
+		assertNativeOutputSchemaAccepts(t, recoverNested, `{
+			"operation_id":"op-1","parent_run_id":"parent-1","parent_generation":4,
+			"child_run_id":"child-1","child_generation":2,"task_id":"task-b",
+			"runtime":{"provider":"openai","model":"gpt-5","source":{"provider":"recovery","model":"recovery"}},
 			"replayed":false
 		}`)
 		if _, exists := descriptors[toolspkg.ToolID("compozy__loop_stop")]; exists {
@@ -1343,6 +1364,8 @@ func nativeDescriptorExpectations() []nativeDescriptorExpectation {
 		{id: "compozy__loop_diff", risk: toolspkg.RiskRead,
 			readOnly: true, destructive: false, openWorld: false},
 		{id: "compozy__loop_fork", risk: toolspkg.RiskMutating,
+			readOnly: false, destructive: false, openWorld: false},
+		{id: "compozy__loop_recover_nested", risk: toolspkg.RiskMutating,
 			readOnly: false, destructive: false, openWorld: false},
 		{id: "compozy__loop_request", risk: toolspkg.RiskRead,
 			readOnly: true, destructive: false, openWorld: false},

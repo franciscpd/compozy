@@ -187,6 +187,7 @@ export const releaseTrainRunDetail: LoopRunDetail = {
   waits: pendingRequestWaits,
   requests: graphEngPendingRequests,
   amendments: releaseTrainAmendments,
+  nested_recoveries: [],
 };
 
 export const releaseTrainPartialRunDetail: LoopRunDetail = {
@@ -207,6 +208,7 @@ export const releaseTrainPartialRunDetail: LoopRunDetail = {
 
   requests: graphEngResolvedRequests,
   amendments: releaseTrainAmendments,
+  nested_recoveries: [],
 };
 
 export const releaseTrainForkRunDetail: LoopRunDetail = {
@@ -236,6 +238,7 @@ export const releaseTrainForkRunDetail: LoopRunDetail = {
   waits: [],
   requests: [],
   amendments: [],
+  nested_recoveries: [],
 };
 
 export const graphEngRunFixtures: LoopRun[] = [

@@ -27,14 +27,15 @@ func (n *daemonNativeTools) loopInteractionToolBindings(
 	availability toolspkg.NativeAvailabilityFunc,
 ) map[toolspkg.ToolID]nativeToolBinding {
 	return map[toolspkg.ToolID]nativeToolBinding{
-		toolspkg.ToolIDLoopApprove:   {call: n.loopApprove, availability: availability},
-		toolspkg.ToolIDLoopRequests:  {call: n.loopRequests, availability: availability},
-		toolspkg.ToolIDLoopRequest:   {call: n.loopRequest, availability: availability},
-		toolspkg.ToolIDLoopRespond:   {call: n.loopRespond, availability: availability},
-		toolspkg.ToolIDLoopNodeAmend: {call: n.loopNodeAmend, availability: availability},
-		toolspkg.ToolIDLoopDiff:      {call: n.loopDiff, availability: availability},
-		toolspkg.ToolIDLoopRerun:     {call: n.loopRerun, availability: availability},
-		toolspkg.ToolIDLoopFork:      {call: n.loopFork, availability: availability},
-		toolspkg.ToolIDLoopDelete:    {call: n.loopDelete, availability: availability},
+		toolspkg.ToolIDLoopApprove:       {call: n.loopApprove, availability: availability},
+		toolspkg.ToolIDLoopRequests:      {call: n.loopRequests, availability: availability},
+		toolspkg.ToolIDLoopRequest:       {call: n.loopRequest, availability: availability},
+		toolspkg.ToolIDLoopRespond:       {call: n.loopRespond, availability: availability},
+		toolspkg.ToolIDLoopNodeAmend:     {call: n.loopNodeAmend, availability: availability},
+		toolspkg.ToolIDLoopDiff:          {call: n.loopDiff, availability: availability},
+		toolspkg.ToolIDLoopRerun:         {call: n.loopRerun, availability: availability},
+		toolspkg.ToolIDLoopFork:          {call: n.loopFork, availability: availability},
+		toolspkg.ToolIDLoopRecoverNested: {call: n.loopRecoverNested, availability: availability},
+		toolspkg.ToolIDLoopDelete:        {call: n.loopDelete, availability: availability},
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -625,6 +626,22 @@ func TestLoopTimeTravelHandlersShouldPreserveTransportParity(t *testing.T) {
 				}
 				return contract.ForkLoopResponse{Run: contract.LoopRunPayload{ID: "fork-1"}}, nil
 			}
+			service.recoverNestedLoopRunFn = func(
+				_ context.Context,
+				workspaceID string,
+				runID string,
+				request contract.RecoverNestedLoopRequest,
+				_ taskpkg.ActorContext,
+			) (contract.RecoverNestedLoopResponse, error) {
+				if workspaceID != "ws-1" || runID != "run-1" || request.RequestID != "req-1" ||
+					request.Runtime.Provider != "openai" || request.Runtime.Model != "gpt-5" {
+					return contract.RecoverNestedLoopResponse{}, errors.New("unexpected nested recovery input")
+				}
+				return contract.RecoverNestedLoopResponse{
+					OperationID: "op-1", ParentRunID: runID, ParentGeneration: 4,
+					ChildRunID: "child-1", ChildGeneration: 2, TaskID: "task-b",
+				}, nil
+			}
 			_, engine := newLoopHandlerFixture(t, transport, service)
 
 			diff := performRequest(t, engine, http.MethodGet,
@@ -653,6 +670,45 @@ func TestLoopTimeTravelHandlersShouldPreserveTransportParity(t *testing.T) {
 			testutil.DecodeJSONResponse(t, fork, &forkResponse)
 			if forkResponse.Run.ID != "fork-1" {
 				t.Fatalf("%s fork response = %#v", transport, forkResponse)
+			}
+
+			recovery := performRequest(t, engine, http.MethodPost,
+				"/workspaces/ws-1/loop-runs/run-1/recover-nested",
+				[]byte(`{"request_id":"req-1","runtime":{"provider":"openai","model":"gpt-5"}}`))
+			assertLoopStatus(t, recovery.Code, http.StatusOK, recovery.Body.String())
+			var recoveryResponse contract.RecoverNestedLoopResponse
+			testutil.DecodeJSONResponse(t, recovery, &recoveryResponse)
+			if recoveryResponse.ChildRunID != "child-1" || recoveryResponse.TaskID != "task-b" {
+				t.Fatalf("%s nested recovery response = %#v", transport, recoveryResponse)
+			}
+
+			unknown := performRequest(t, engine, http.MethodPost,
+				"/workspaces/ws-1/loop-runs/run-1/recover-nested",
+				[]byte(`{"request_id":"req-1","runtime":{"provider":"openai","model":"gpt-5","extra":true}}`))
+			assertLoopStatus(t, unknown.Code, http.StatusBadRequest, unknown.Body.String())
+
+			service.recoverNestedLoopRunFn = func(
+				context.Context,
+				string,
+				string,
+				contract.RecoverNestedLoopRequest,
+				taskpkg.ActorContext,
+			) (contract.RecoverNestedLoopResponse, error) {
+				return contract.RecoverNestedLoopResponse{}, &looppkg.ReasonError{
+					Code: looppkg.ReasonCodeNestedRecoveryConflict,
+					Err: fmt.Errorf(
+						"%w: %w",
+						looppkg.ErrNestedRecoveryConflict,
+						looppkg.ErrNestedRecoveryTargetNotFound,
+					),
+				}
+			}
+			noTarget := performRequest(t, engine, http.MethodPost,
+				"/workspaces/ws-1/loop-runs/run-1/recover-nested",
+				[]byte(`{"request_id":"req-2","runtime":{"provider":"openai","model":"gpt-5"}}`))
+			assertLoopStatus(t, noTarget.Code, http.StatusConflict, noTarget.Body.String())
+			if !strings.Contains(noTarget.Body.String(), `"code":"nested_recovery_conflict"`) {
+				t.Fatalf("%s no-target response = %s, want typed conflict code", transport, noTarget.Body.String())
 			}
 
 			invalid := performRequest(t, engine, http.MethodGet,
@@ -1896,6 +1952,7 @@ func registerLoopTestRoutes(engine *gin.Engine, handlers *core.BaseHandlers) {
 	workspace.GET("/loop-runs/:run_id/diff", handlers.DiffLoopRun)
 	workspace.POST("/loop-runs/:run_id/rerun", handlers.RerunLoopRun)
 	workspace.POST("/loop-runs/:run_id/fork", handlers.ForkLoopRun)
+	workspace.POST("/loop-runs/:run_id/recover-nested", handlers.RecoverNestedLoopRun)
 	workspace.GET("/loop-nodes", handlers.ListLoopNodes)
 	workspace.GET("/loop-runs/:run_id/events", handlers.StreamLoopRunEvents)
 	workspace.GET("/sessions/:session_id/goal", handlers.GetSessionGoal)
@@ -1959,6 +2016,13 @@ type stubLoopService struct {
 		contract.ForkLoopRequest,
 		taskpkg.ActorContext,
 	) (contract.ForkLoopResponse, error)
+	recoverNestedLoopRunFn func(
+		context.Context,
+		string,
+		string,
+		contract.RecoverNestedLoopRequest,
+		taskpkg.ActorContext,
+	) (contract.RecoverNestedLoopResponse, error)
 	getLoopRunFn        func(context.Context, string, string) (contract.LoopRunResponse, error)
 	getLoopRunNodesFn   func(context.Context, string, string, looppkg.RosterQuery) (contract.LoopRunNodesResponse, error)
 	getLoopBriefingFn   func(context.Context, string, string) (contract.LoopBriefingResponse, error)
@@ -2407,6 +2471,19 @@ func (s *stubLoopService) ForkLoopRun(
 		return contract.ForkLoopResponse{}, errors.New("unexpected ForkLoopRun call")
 	}
 	return s.forkLoopRunFn(ctx, workspaceID, runID, request, actor)
+}
+
+func (s *stubLoopService) RecoverNestedLoopRun(
+	ctx context.Context,
+	workspaceID string,
+	runID string,
+	request contract.RecoverNestedLoopRequest,
+	actor taskpkg.ActorContext,
+) (contract.RecoverNestedLoopResponse, error) {
+	if s.recoverNestedLoopRunFn == nil {
+		return contract.RecoverNestedLoopResponse{}, errors.New("unexpected RecoverNestedLoopRun call")
+	}
+	return s.recoverNestedLoopRunFn(ctx, workspaceID, runID, request, actor)
 }
 
 func (s *stubLoopService) GetSessionGoal(

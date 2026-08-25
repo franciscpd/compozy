@@ -1,11 +1,11 @@
 ---
 title: Time travel
-description: Compare Loop history, rerun from a settled node, or fork a linked run from a historical generation.
+description: Compare Loop history, rerun from a settled node, fork a linked run, or recover a failed nested child.
 ---
 
-Time travel gives operators and agents three separate controls over durable Loop history: `diff` reads
+Time travel gives operators and agents four separate controls over durable Loop history: `diff` reads
 what changed, `rerun` opens a new generation in the same run, and `fork` creates a linked run without
-changing its source.
+changing its source. `recover-nested` retries one failed direct child without replacing either run.
 
 ## Compare history
 
@@ -62,6 +62,39 @@ source.
 Fork uses the Loop's normal concurrency policy. Agents need `loops.timetravel`, and the same executing-run
 self-operation rule applies.
 
+## Recover a failed nested child
+
+Use recovery when a terminal parent is still bound to a terminal failed child created by an awaited
+`run-loop` cell. The daemon derives the first recoverable failed child cell and its task identity; callers
+cannot select a child ID, node, item, generation, budget, or configuration field.
+
+```bash
+compozy loop recover-nested \
+  --workspace <workspace> \
+  --run <parent-run-id> \
+  --request-id <request-id> \
+  --runtime-file runtime.json \
+  -o json
+```
+
+The runtime file is a closed JSON object with required `provider` and `model` fields and optional
+`reasoning` and `speed`. That exact runtime applies only to the selected child generation cell and is
+recorded with `recovery` provenance. Stored Loop configuration, definition digests, run IDs, budget
+counters, ceilings, and deadlines remain unchanged.
+
+Recovery atomically opens one new generation on the existing child and parent. Successful child siblings
+carry forward; only the failed cell and its dependents rerun. The parent keeps the same child binding and
+waits for the new child settlement. Status for either run exposes the same ordered `nested_recoveries`
+evidence, including operation ID, both generations, task ID, and resolved runtime.
+
+Use the opt-in Loop config `reattempt_strategy: halt` when a failed generation must remain naturally
+settled and recoverable. It ends that generation as `failed` without quarantine or an automatic
+successor; `failed_only` remains the default and `full_body` is unchanged.
+
+The request ID is mandatory. Retrying the same request returns the original operation without starting
+more work. Reusing its key with different input, changing the lineage concurrently, exhausting either
+run's original budget, or pausing/canceling either run returns `409 Conflict` without mutating either run.
+
 ## Safe retries
 
 Pass `--request-id` to rerun or fork when retrying a request after a transport failure. Reusing the same
@@ -73,3 +106,4 @@ key with identical inputs returns the committed result; changing the request whi
 | Diff   | `compozy loop diff`  | `GET /loop-runs/:id/diff`   | `compozy__loop_diff`  |
 | Rerun  | `compozy loop rerun` | `POST /loop-runs/:id/rerun` | `compozy__loop_rerun` |
 | Fork   | `compozy loop fork`  | `POST /loop-runs/:id/fork`  | `compozy__loop_fork`  |
+| Recover nested | `compozy loop recover-nested` | `POST /loop-runs/:id/recover-nested` | `compozy__loop_recover_nested` |

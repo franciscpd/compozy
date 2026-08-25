@@ -3999,6 +3999,58 @@ func TestCoordinatorRunnerShouldPlanReattemptStrategy(t *testing.T) {
 	}
 }
 
+func TestCoordinatorRunnerShouldHaltFailedGenerationWithoutReattempt(t *testing.T) {
+	t.Parallel()
+
+	loopRun := Run{
+		ID:                "looprun-reattempt-halt",
+		WorkspaceID:       "ws-1",
+		LoopName:          "delivery",
+		Status:            StatusRunning,
+		Generation:        1,
+		IterationCap:      5,
+		ReattemptStrategy: ReattemptHalt,
+	}
+	coordinatorRun := task.Run{
+		ID:        "run-coordinator-reattempt-halt",
+		TaskID:    "task-coordinator-reattempt-halt",
+		RunKind:   task.RunKindCoordinator,
+		LoopRunID: string(loopRun.ID),
+		Status:    task.TaskRunStatusClaimed,
+	}
+	runner := newCoordinatorRunnerForTestWithGraph(
+		t,
+		loopRun,
+		coordinatorRun,
+		map[string]task.Run{coordinatorRun.ID: coordinatorRun},
+		coordinatorRunnerOutputs{outputs: map[int][]GenerationOutput{1: {
+			{Generation: 1, NodeID: "agent", Status: generationOutputFailed, OutputRef: "tool_failed"},
+		}}},
+		dsl.Graph{Nodes: []dsl.Node{{
+			ID: "agent", Class: dsl.NodeClassAction, Kind: string(dsl.ActionRunAgent),
+		}}},
+	)
+
+	plan, err := runner.Run(context.Background(), task.RunID(coordinatorRun.ID))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if plan.Terminal == nil || plan.Terminal.Status != string(StatusFailed) {
+		t.Fatalf("Terminal = %#v, want failed", plan.Terminal)
+	}
+	if plan.NextCoordinator != nil || plan.PostReserveSnapshot != nil || len(plan.NodeTasks) != 0 || len(plan.NodeRuns) != 0 {
+		t.Fatalf("halt planned new work: next=%#v post=%#v tasks=%d runs=%d",
+			plan.NextCoordinator, plan.PostReserveSnapshot, len(plan.NodeTasks), len(plan.NodeRuns))
+	}
+	payload := coordinatorSnapshotPayloadForTest(t, plan)
+	if len(payload.Controls) != 0 {
+		t.Fatalf("halt planned quarantine/control mutations: %#v", payload.Controls)
+	}
+	if got := payload.Outputs[0]; got.Status != generationOutputFailed || got.Generation != 1 || got.OutputRef != "tool_failed" {
+		t.Fatalf("halt mutated failed output: %#v", got)
+	}
+}
+
 func TestCoordinatorRunnerShouldClearSubLoopChildOnFailedOnlyRetry(t *testing.T) {
 	t.Run("Should clear child ownership for a rerun root and its dependents", func(t *testing.T) {
 		t.Parallel()

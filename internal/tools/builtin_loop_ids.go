@@ -55,6 +55,8 @@ const (
 	ToolIDLoopRerun ToolID = "compozy__loop_rerun"
 	// ToolIDLoopFork creates a linked run from one historical generation.
 	ToolIDLoopFork ToolID = "compozy__loop_fork"
+	// ToolIDLoopRecoverNested reactivates one failed direct child in its existing lineage.
+	ToolIDLoopRecoverNested ToolID = "compozy__loop_recover_nested"
 	// ToolIDLoopDelete deletes one user-authored Loop definition.
 	ToolIDLoopDelete ToolID = "compozy__loop_delete"
 	// ToolsetIDLoops groups Loop authoring, execution, and run-management tools.

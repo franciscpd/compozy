@@ -45,6 +45,21 @@ func (r *CoordinatorRunner) configureActionExecutionInput(
 			return err
 		}
 	}
+	if r.recoveryRuntimes != nil {
+		recovery, found, recoveryErr := r.recoveryRuntimes.GetNestedRecoveryRuntime(ctx, NestedRecoveryRuntimeKey{
+			WorkspaceID: actionCtx.loopRun.WorkspaceID,
+			RunID:       actionCtx.loopRun.ID,
+			Generation:  actionCtx.meta.Generation,
+			NodeID:      NodeID(actionCtx.node.ID),
+			ItemIndex:   actionCtx.meta.ItemIndex,
+		})
+		if recoveryErr != nil {
+			return fmt.Errorf("loop: load nested recovery runtime: %w", recoveryErr)
+		}
+		if found {
+			input.RuntimeSelection.Recovery = recovery
+		}
+	}
 	if recorder, ok := r.outputs.(ActionAppliedRuntimeRecorder); ok {
 		input.RuntimeSelection.Recorder = recorder
 	}

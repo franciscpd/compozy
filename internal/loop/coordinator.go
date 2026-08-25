@@ -112,6 +112,7 @@ type CoordinatorRunner struct {
 	gateEvaluator      gate.GateEvaluator
 	actionRegistry     *ActionRegistry
 	runtimeCatalog     WorkspaceRuntimeCatalog
+	recoveryRuntimes   NestedRecoveryRuntimeReader
 	targetHealth       TargetHealth
 	targetProbes       sync.Map
 	logger             *slog.Logger

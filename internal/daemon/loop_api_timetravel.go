@@ -94,3 +94,46 @@ func (s *daemonLoopAPIService) ForkLoopRun(
 	}
 	return contract.ForkLoopResponse{Run: payload, Replayed: result.Replayed}, nil
 }
+
+func (s *daemonLoopAPIService) RecoverNestedLoopRun(
+	ctx context.Context,
+	workspaceID string,
+	runID string,
+	request contract.RecoverNestedLoopRequest,
+	actor task.ActorContext,
+) (contract.RecoverNestedLoopResponse, error) {
+	ws, err := normalizeLoopWorkspaceID(workspaceID)
+	if err != nil {
+		return contract.RecoverNestedLoopResponse{}, err
+	}
+	service, ok := s.aggregate.(looppkg.TimeTravelService)
+	if !ok {
+		return contract.RecoverNestedLoopResponse{}, looppkg.ErrActionDependencyMissing
+	}
+	result, err := service.RecoverNestedLoop(ctx, looppkg.NestedRecoveryInput{
+		WorkspaceID: ws,
+		ParentRunID: looppkg.RunID(strings.TrimSpace(runID)),
+		RequestID:   strings.TrimSpace(request.RequestID),
+		Runtime: looppkg.RuntimeSpec{
+			Provider:  strings.TrimSpace(request.Runtime.Provider),
+			Model:     strings.TrimSpace(request.Runtime.Model),
+			Reasoning: strings.TrimSpace(request.Runtime.Reasoning),
+			Speed:     request.Runtime.Speed,
+		},
+		Actor: actor,
+	})
+	if err != nil {
+		return contract.RecoverNestedLoopResponse{}, err
+	}
+	runtime := loopResolvedRuntimePayload(&result.Runtime)
+	return contract.RecoverNestedLoopResponse{
+		OperationID:      result.OperationID,
+		ParentRunID:      string(result.ParentRunID),
+		ParentGeneration: result.ParentGeneration,
+		ChildRunID:       string(result.ChildRunID),
+		ChildGeneration:  result.ChildGeneration,
+		TaskID:           result.TaskID,
+		Runtime:          *runtime,
+		Replayed:         result.Replayed,
+	}, nil
+}

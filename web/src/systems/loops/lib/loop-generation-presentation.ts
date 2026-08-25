@@ -14,6 +14,7 @@ const ORIGIN_LABELS: Record<LoopRunGeneration["origin"], string> = {
   requeue: "Manual requeue",
   operator_rerun: "Operator rerun",
   fork_seed: "Fork seed",
+  nested_recovery: "Nested recovery",
 };
 
 export function isLoopGenerationOrigin(value: string): value is LoopRunGeneration["origin"] {

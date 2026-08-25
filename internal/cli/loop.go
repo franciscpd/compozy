@@ -49,6 +49,7 @@ const (
 	loopDiffKey             = "diff"
 	loopRerunKey            = "rerun"
 	loopForkKey             = "fork"
+	loopRecoverNestedKey    = "recover-nested"
 	loopEditKey             = "edit"
 	loopDeleteKey           = "delete"
 	loopWhyKey              = "why"
@@ -90,6 +91,7 @@ func newLoopCommand(deps commandDeps) *cobra.Command {
 	cmd.AddCommand(newLoopDiffCommand(deps))
 	cmd.AddCommand(newLoopRerunCommand(deps))
 	cmd.AddCommand(newLoopForkCommand(deps))
+	cmd.AddCommand(newLoopRecoverNestedCommand(deps))
 	cmd.AddCommand(newLoopEditCommand(deps))
 	cmd.AddCommand(newLoopDeleteCommand(deps))
 	return cmd

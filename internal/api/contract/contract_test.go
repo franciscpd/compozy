@@ -2377,3 +2377,11 @@ func assertJSONFieldAbsent(t *testing.T, payload map[string]any, field string) {
 		t.Fatalf("payload should not include %q: %#v", field, payload)
 	}
 }
+
+func TestLoopReattemptStrategyShouldExposeHalt(t *testing.T) {
+	t.Parallel()
+
+	if got, want := contract.LoopReattemptHalt, contract.LoopReattemptStrategy("halt"); got != want {
+		t.Fatalf("LoopReattemptHalt = %q, want %q", got, want)
+	}
+}

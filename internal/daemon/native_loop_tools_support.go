@@ -430,3 +430,10 @@ type nativeLoopForkInput struct {
 	Reason      string         `json:"reason,omitempty"`
 	RequestID   string         `json:"request_id,omitempty"`
 }
+
+type nativeLoopRecoverNestedInput struct {
+	WorkspaceID string                   `json:"workspace,omitempty"`
+	RunID       string                   `json:"run_id"`
+	RequestID   string                   `json:"request_id"`
+	Runtime     contract.LoopRuntimeSpec `json:"runtime"`
+}

@@ -72,3 +72,18 @@ func (c *daemonClient) ForkLoopRun(
 	}
 	return response, nil
 }
+
+func (c *daemonClient) RecoverNestedLoopRun(
+	ctx context.Context,
+	workspaceID string,
+	runID string,
+	request contract.RecoverNestedLoopRequest,
+	credentials agentidentity.Credentials,
+) (contract.RecoverNestedLoopResponse, error) {
+	var response contract.RecoverNestedLoopResponse
+	if err := c.doAgentJSON(ctx, http.MethodPost, loopRunPath(workspaceID, runID)+"/recover-nested",
+		nil, request, credentials, &response); err != nil {
+		return contract.RecoverNestedLoopResponse{}, err
+	}
+	return response, nil
+}

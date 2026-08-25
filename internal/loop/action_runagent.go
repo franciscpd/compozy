@@ -161,6 +161,7 @@ func resolveRunAgentRuntime(
 	if err != nil {
 		return ResolvedRuntime{}, err
 	}
+	item.Recovery = runtimeSelection.Recovery
 	resolved, err := ResolveItemRuntime(RuntimeLayers{
 		Defaults:    runtimeSelection.Defaults.Worker,
 		ConfigRules: runtimeSelection.ConfigRules,

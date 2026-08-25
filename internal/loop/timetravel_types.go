@@ -11,21 +11,25 @@ import (
 )
 
 var (
-	ErrRerunBusy             = errors.New("loop: rerun generation is busy")
-	ErrRerunNodeUnsettled    = errors.New("loop: rerun node is unsettled")
-	ErrTimeTravelKeyReuse    = errors.New("loop: time travel request id reused")
-	ErrForkGenerationUnknown = errors.New("loop: fork generation is unknown")
-	ErrDiffCrossLoop         = errors.New("loop: diff requires the same loop")
-	ErrTimeTravelSelfDenied  = errors.New("loop: time travel self-operation denied")
+	ErrRerunBusy                     = errors.New("loop: rerun generation is busy")
+	ErrRerunNodeUnsettled            = errors.New("loop: rerun node is unsettled")
+	ErrTimeTravelKeyReuse            = errors.New("loop: time travel request id reused")
+	ErrForkGenerationUnknown         = errors.New("loop: fork generation is unknown")
+	ErrDiffCrossLoop                 = errors.New("loop: diff requires the same loop")
+	ErrTimeTravelSelfDenied          = errors.New("loop: time travel self-operation denied")
+	ErrNestedRecoveryConflict        = errors.New("loop: nested recovery lineage conflict")
+	ErrNestedRecoveryBudgetExhausted = errors.New("loop: nested recovery budget exhausted")
 )
 
 const (
-	ReasonCodeRerunBusy             ReasonCode = "rerun_busy"
-	ReasonCodeRerunNodeUnsettled    ReasonCode = "rerun_node_unsettled"
-	ReasonCodeTimeTravelKeyReuse    ReasonCode = "timetravel_key_reuse"
-	ReasonCodeForkGenerationUnknown ReasonCode = "fork_generation_unknown"
-	ReasonCodeDiffCrossLoop         ReasonCode = "diff_cross_loop"
-	ReasonCodeTimeTravelSelfDenied  ReasonCode = "timetravel_self_denied"
+	ReasonCodeRerunBusy                     ReasonCode = "rerun_busy"
+	ReasonCodeRerunNodeUnsettled            ReasonCode = "rerun_node_unsettled"
+	ReasonCodeTimeTravelKeyReuse            ReasonCode = "timetravel_key_reuse"
+	ReasonCodeForkGenerationUnknown         ReasonCode = "fork_generation_unknown"
+	ReasonCodeDiffCrossLoop                 ReasonCode = "diff_cross_loop"
+	ReasonCodeTimeTravelSelfDenied          ReasonCode = "timetravel_self_denied"
+	ReasonCodeNestedRecoveryConflict        ReasonCode = "nested_recovery_conflict"
+	ReasonCodeNestedRecoveryBudgetExhausted ReasonCode = "nested_recovery_budget_exhausted"
 )
 
 type ForkRef struct {
@@ -112,6 +116,15 @@ type ForkInput struct {
 	Actor       task.ActorContext
 }
 
+// NestedRecoveryInput carries the only caller-owned nested recovery fields.
+type NestedRecoveryInput struct {
+	WorkspaceID WorkspaceID
+	ParentRunID RunID
+	RequestID   string
+	Runtime     RuntimeSpec
+	Actor       task.ActorContext
+}
+
 type StartResult struct {
 	Run      Run  `json:"run"`
 	Replayed bool `json:"replayed,omitempty"`
@@ -153,6 +166,43 @@ type ForkStoreRequest struct {
 	RequestDigest  string
 	IdempotencyKey string
 	At             time.Time
+}
+
+// NestedRecoveryStoreRequest is one preplanned atomic parent/child reactivation.
+type NestedRecoveryStoreRequest struct {
+	WorkspaceID    WorkspaceID
+	Parent         *Run
+	Child          *Run
+	ParentIntent   GenerationIntent
+	ChildIntent    GenerationIntent
+	ParentOutputs  []GenerationOutput
+	ChildOutputs   []GenerationOutput
+	Target         NestedRecoveryTarget
+	TaskID         string
+	Runtime        ResolvedRuntime
+	Operation      TimeTravelOp
+	RequestDigest  string
+	IdempotencyKey string
+	At             time.Time
+}
+
+// NestedRecoveryResult is the durable result of one nested recovery operation.
+type NestedRecoveryResult struct {
+	OperationID      string          `json:"operation_id"`
+	ParentRunID      RunID           `json:"parent_run_id"`
+	ParentGeneration int64           `json:"parent_generation"`
+	ChildRunID       RunID           `json:"child_run_id"`
+	ChildGeneration  int64           `json:"child_generation"`
+	TaskID           string          `json:"task_id"`
+	Runtime          ResolvedRuntime `json:"runtime"`
+	Replayed         bool            `json:"replayed,omitempty"`
+}
+
+// NestedRecoveryStore atomically reactivates one direct parent/child lineage.
+type NestedRecoveryStore interface {
+	LookupNestedRecoveryReplay(context.Context, WorkspaceID, string, string) (NestedRecoveryResult, bool, error)
+	CreateNestedRecovery(context.Context, NestedRecoveryStoreRequest) (NestedRecoveryResult, bool, error)
+	ListNestedRecoveries(context.Context, WorkspaceID, RunID) ([]NestedRecoveryResult, error)
 }
 
 type TimeTravelStore interface {

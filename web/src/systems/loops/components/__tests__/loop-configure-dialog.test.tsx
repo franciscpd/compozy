@@ -145,6 +145,15 @@ describe("LoopConfigureDialog", () => {
       "aria-checked",
       "false"
     );
+    fireEvent.click(screen.getByTestId("loop-configure-strategy-halt"));
+    expect(screen.getByTestId("loop-configure-strategy-halt")).toHaveAttribute(
+      "aria-checked",
+      "true"
+    );
+    expect(screen.getByTestId("loop-configure-strategy-full-body")).toHaveAttribute(
+      "aria-checked",
+      "false"
+    );
   });
 
   it("Should clamp a per-loop limit override at its ceiling", () => {

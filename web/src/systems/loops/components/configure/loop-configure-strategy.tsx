@@ -34,12 +34,20 @@ const STRATEGY_CARDS: StrategyCard[] = [
     description:
       "Re-runs the whole body from scratch each generation. Safer when steps share hidden state, but costs more tokens.",
   },
+  {
+    value: "halt",
+    label: "halt",
+    testIdSuffix: "halt",
+    isDefault: false,
+    description:
+      "Ends the run as failed after a failed generation, without quarantine or an automatic successor. Use when recovery is driven explicitly.",
+  },
 ];
 
 export function LoopConfigureStrategy({ value, disabled, onChange }: LoopConfigureStrategyProps) {
   return (
     <div
-      className="grid grid-cols-1 gap-2.5 sm:grid-cols-2"
+      className="grid grid-cols-1 gap-2.5 sm:grid-cols-3"
       data-testid="loop-configure-strategy"
       role="radiogroup"
       aria-label="Re-attempt strategy"

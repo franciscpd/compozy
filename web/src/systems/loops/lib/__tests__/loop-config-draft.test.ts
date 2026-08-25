@@ -45,6 +45,19 @@ describe("initialConfigDraft", () => {
     expect(draft.limits.values.budget_wall_sec).toBe(120);
   });
 
+  it("Should preserve a stored halt strategy through an unrelated save", () => {
+    const stored: LoopConfig = {
+      ...loopConfigFixture,
+      reattempt_strategy: "halt",
+    };
+    const draft = initialConfigDraft(descriptors, stored, loopEffectiveConfigFixture);
+    expect(draft.reattemptStrategy).toBe("halt");
+
+    draft.humanGateEnabled = !draft.humanGateEnabled;
+    const { config } = buildLoopConfigRequest(draft, descriptors);
+    expect(config.reattempt_strategy).toBe("halt");
+  });
+
   it("Should clamp a stored value that exceeds its ceiling", () => {
     const draft = initialConfigDraft(
       descriptors,

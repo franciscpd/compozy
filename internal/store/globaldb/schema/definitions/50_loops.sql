@@ -68,7 +68,7 @@ CREATE TABLE loop_generations (
 				CHECK (parent_generation >= 0 AND parent_generation < generation),
 			origin            TEXT NOT NULL CHECK (origin IN (
 				'initial','stop_when','reattempt','gate_revise','gate_next_generation',
-				'dod_retry','ratchet_restore','requeue','operator_rerun','fork_seed'
+				'dod_retry','ratchet_restore','requeue','operator_rerun','fork_seed','nested_recovery'
 			)),
 			created_at        TIMESTAMP NOT NULL,
 			PRIMARY KEY (loop_run_id, generation)
@@ -212,7 +212,7 @@ CREATE TABLE loop_requests (
 CREATE TABLE loop_timetravel_ops (
 	workspace_id      TEXT NOT NULL,
 	op_id             TEXT NOT NULL,
-	kind              TEXT NOT NULL CHECK (kind IN ('rerun','fork')),
+	kind              TEXT NOT NULL CHECK (kind IN ('rerun','fork','nested_recovery')),
 	idempotency_key   TEXT NOT NULL DEFAULT '',
 	request_digest    TEXT NOT NULL CHECK (length(request_digest) = 64),
 	source_run_id     TEXT NOT NULL REFERENCES loop_runs(id) ON DELETE CASCADE,
@@ -232,8 +232,37 @@ CREATE TABLE loop_timetravel_ops (
 		OR
 		(kind = 'fork' AND source_generation IS NOT NULL AND from_node IS NULL
 		 AND item_index IS NULL AND result_generation IS NULL)
+		OR
+		(kind = 'nested_recovery' AND source_generation IS NOT NULL AND from_node IS NOT NULL
+		 AND item_index IS NOT NULL AND result_generation IS NOT NULL AND result_run_id = source_run_id)
 	)
 );
+
+CREATE TABLE loop_nested_recoveries (
+	workspace_id      TEXT NOT NULL,
+	operation_id      TEXT NOT NULL,
+	parent_run_id     TEXT NOT NULL REFERENCES loop_runs(id) ON DELETE CASCADE,
+	parent_generation INTEGER NOT NULL CHECK (parent_generation >= 1),
+	parent_node_id    TEXT NOT NULL,
+	parent_item_index INTEGER NOT NULL CHECK (parent_item_index >= 0),
+	child_run_id      TEXT NOT NULL REFERENCES loop_runs(id) ON DELETE CASCADE,
+	child_generation  INTEGER NOT NULL CHECK (child_generation >= 1),
+	child_node_id     TEXT NOT NULL,
+	child_item_index  INTEGER NOT NULL CHECK (child_item_index >= 0),
+	task_id           TEXT NOT NULL,
+	runtime_json      TEXT NOT NULL CHECK (json_valid(runtime_json)),
+	created_at        TIMESTAMP NOT NULL,
+	PRIMARY KEY (workspace_id, operation_id),
+	UNIQUE (workspace_id, child_run_id, child_generation, child_node_id, child_item_index),
+	FOREIGN KEY (workspace_id, operation_id)
+		REFERENCES loop_timetravel_ops(workspace_id, op_id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_loop_nested_recoveries_parent
+	ON loop_nested_recoveries(workspace_id, parent_run_id, created_at, operation_id);
+
+CREATE INDEX idx_loop_nested_recoveries_child
+	ON loop_nested_recoveries(workspace_id, child_run_id, created_at, operation_id);
 
 CREATE TABLE loop_node_amendments (
 	workspace_id  TEXT NOT NULL,

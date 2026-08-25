@@ -27,6 +27,49 @@ import (
 func TestLoopCommandShouldMapCLIVerbsToClient(t *testing.T) {
 	t.Parallel()
 
+	t.Run("Should recover a nested child with a strict runtime file", func(t *testing.T) {
+		t.Parallel()
+
+		runtimeFile := filepath.Join(t.TempDir(), "runtime.json")
+		if err := os.WriteFile(runtimeFile, []byte(`{"provider":"openai","model":"gpt-5"}`), 0o600); err != nil {
+			t.Fatalf("WriteFile(runtime) error = %v", err)
+		}
+		var captured contract.RecoverNestedLoopRequest
+		deps := newTestDeps(t, &stubClient{
+			getWorkspaceFn: resolveTestLoopWorkspace(t),
+			recoverNestedLoopRunFn: func(
+				_ context.Context,
+				workspaceID string,
+				runID string,
+				request contract.RecoverNestedLoopRequest,
+				_ agentidentity.Credentials,
+			) (contract.RecoverNestedLoopResponse, error) {
+				if workspaceID != "ws-alpha" || runID != "parent-1" {
+					t.Fatalf("RecoverNestedLoopRun target = %q/%q", workspaceID, runID)
+				}
+				captured = request
+				return contract.RecoverNestedLoopResponse{OperationID: "op-1", ChildRunID: "child-1"}, nil
+			},
+		})
+
+		stdout, _, err := executeRootCommand(t, deps,
+			"loop", "recover-nested", "--workspace", "alpha", "--run", "parent-1",
+			"--request-id", "req-1", "--runtime-file", runtimeFile, "-o", "json")
+		if err != nil {
+			t.Fatalf("executeRootCommand(loop recover-nested) error = %v", err)
+		}
+		if captured.RequestID != "req-1" || captured.Runtime.Provider != "openai" || captured.Runtime.Model != "gpt-5" {
+			t.Fatalf("RecoverNestedLoopRun request = %#v", captured)
+		}
+		var output contract.RecoverNestedLoopResponse
+		if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+			t.Fatalf("Unmarshal(stdout) error = %v; stdout = %q", err, stdout)
+		}
+		if output.ChildRunID != "child-1" {
+			t.Fatalf("output = %#v", output)
+		}
+	})
+
 	t.Run("Should map request response identity flags without positional arguments", func(t *testing.T) {
 		t.Parallel()
 

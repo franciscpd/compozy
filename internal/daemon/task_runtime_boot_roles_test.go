@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,21 @@ import (
 	"github.com/compozy/compozy/internal/testutil"
 	workspacepkg "github.com/compozy/compozy/internal/workspace"
 )
+
+func TestLoopCoordinatorBootShouldWireStoreBackedRecoveryRuntimeReader(t *testing.T) {
+	t.Parallel()
+
+	db := openDaemonTestGlobalDB(t)
+	var _ looppkg.NestedRecoveryRuntimeReader = db
+	runner, err := newLoopCoordinatorRunner(db, nil, nil, nil, nil, nil, nil, discardLogger())
+	if err != nil {
+		t.Fatalf("newLoopCoordinatorRunner() error = %v", err)
+	}
+	field := reflect.ValueOf(runner).Elem().FieldByName("recoveryRuntimes")
+	if !field.IsValid() || field.IsNil() {
+		t.Fatal("newLoopCoordinatorRunner() did not inject the store-backed nested recovery runtime reader")
+	}
+}
 
 func TestTaskManagerOptionsShouldWireLoopCoordinatorTerminalStatusValidator(t *testing.T) {
 	t.Parallel()

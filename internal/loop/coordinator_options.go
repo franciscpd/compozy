@@ -88,6 +88,13 @@ func WithCoordinatorRuntimeCatalog(catalog WorkspaceRuntimeCatalog) CoordinatorR
 	}
 }
 
+// WithCoordinatorNestedRecoveryRuntimeReader injects exact generation-cell recovery overrides.
+func WithCoordinatorNestedRecoveryRuntimeReader(reader NestedRecoveryRuntimeReader) CoordinatorRunnerOption {
+	return func(r *CoordinatorRunner) {
+		r.recoveryRuntimes = reader
+	}
+}
+
 // WithCoordinatorTargetHealth injects daemon-global loop-target admission and accounting.
 func WithCoordinatorTargetHealth(health TargetHealth) CoordinatorRunnerOption {
 	return func(r *CoordinatorRunner) {

@@ -67,6 +67,7 @@ const (
 	LoopRunTransitionCauseWatchEvents        LoopRunTransitionCause = "watch_events"
 	LoopRunTransitionCauseCoordinatorFailure LoopRunTransitionCause = "coordinator_failure"
 	LoopRunTransitionCauseOperatorRerun      LoopRunTransitionCause = "operator_rerun"
+	LoopRunTransitionCauseNestedRecovery     LoopRunTransitionCause = "nested_recovery"
 )
 
 // LoopNodeClass is the public loop graph node class vocabulary.
@@ -84,6 +85,7 @@ type LoopReattemptStrategy string
 const (
 	LoopReattemptFailedOnly LoopReattemptStrategy = "failed_only"
 	LoopReattemptFullBody   LoopReattemptStrategy = "full_body"
+	LoopReattemptHalt       LoopReattemptStrategy = "halt"
 )
 
 // LoopBudgetExceeded controls the outcome for a budget breach.

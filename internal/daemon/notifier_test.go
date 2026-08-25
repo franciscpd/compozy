@@ -1514,6 +1514,7 @@ func TestHooksNotifierCoordinatorTerminalObserverWakesParentAndPromotesQueued(t 
 				ParentLoopRunID: "parent-loop-run",
 				WorkspaceID:     "ws-1",
 				LoopName:        "daily-review",
+				Generation:      4,
 			},
 			Status: "done",
 		}); err != nil {
@@ -1527,7 +1528,7 @@ func TestHooksNotifierCoordinatorTerminalObserverWakesParentAndPromotesQueued(t 
 		if got, want := wake.loopRunID, "parent-loop-run"; got != want {
 			t.Fatalf("parent wake loop_run_id = %q, want %q", got, want)
 		}
-		if got, want := wake.idempotencyKey, "loop.coordinator.child_terminal.parent-loop-run.child-loop-run"; got != want {
+		if got, want := wake.idempotencyKey, "loop.coordinator.child_terminal.parent-loop-run.child-loop-run.g4"; got != want {
 			t.Fatalf("parent wake key = %q, want %q", got, want)
 		}
 		if got, want := len(loopStore.promotions), 1; got != want {

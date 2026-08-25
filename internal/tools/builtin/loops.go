@@ -333,6 +333,8 @@ func nativeLoopDescriptor(
 		descriptor.OutputSchema = json.RawMessage(loopRerunOutputSchema)
 	case toolspkg.ToolIDLoopFork:
 		descriptor.OutputSchema = json.RawMessage(loopForkOutputSchema)
+	case toolspkg.ToolIDLoopRecoverNested:
+		descriptor.OutputSchema = json.RawMessage(loopRecoverNestedOutputSchema)
 	case toolspkg.ToolIDLoopCancel,
 		toolspkg.ToolIDLoopKill,
 		toolspkg.ToolIDLoopNodePause,
@@ -348,7 +350,7 @@ func nativeLoopDescriptor(
 	if id == toolspkg.ToolIDLoopRespond || id == toolspkg.ToolIDLoopNodeAmend {
 		return withRequiredCapabilities(descriptor, "loops.respond")
 	}
-	if id == toolspkg.ToolIDLoopRerun || id == toolspkg.ToolIDLoopFork {
+	if id == toolspkg.ToolIDLoopRerun || id == toolspkg.ToolIDLoopFork || id == toolspkg.ToolIDLoopRecoverNested {
 		return withRequiredCapabilities(descriptor, "loops.timetravel")
 	}
 	return descriptor

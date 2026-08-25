@@ -5621,6 +5621,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/workspaces/{workspace_id}/loop-runs/{run_id}/recover-nested": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Recover one failed direct child Loop run in the same lineage */
+    post: operations["recoverNestedLoopRun"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/workspaces/{workspace_id}/loop-runs/{run_id}/rerun": {
     parameters: {
       query?: never;
@@ -101436,7 +101453,7 @@ export interface operations {
                 steps_total: number;
               };
               /** @enum {string} */
-              reattempt_strategy: "failed_only" | "full_body";
+              reattempt_strategy: "failed_only" | "full_body" | "halt";
               resolved_network_participation:
                 | (
                     | {
@@ -102277,7 +102294,8 @@ export interface operations {
                 | "ratchet_restore"
                 | "requeue"
                 | "operator_rerun"
-                | "fork_seed";
+                | "fork_seed"
+                | "nested_recovery";
               outputs: {
                 attempt?: number;
                 child_loop_run_id?: string;
@@ -102575,6 +102593,41 @@ export interface operations {
                 type: string;
               }[];
             };
+            nested_recoveries: {
+              /** Format: int64 */
+              child_generation: number;
+              child_run_id: string;
+              operation_id: string;
+              /** Format: int64 */
+              parent_generation: number;
+              parent_run_id: string;
+              runtime: {
+                model?: string;
+                provider?: string;
+                reasoning?: string;
+                source: {
+                  model?: string;
+                  provider?: string;
+                  reasoning?: string;
+                  speed?: string;
+                };
+                /** @enum {string} */
+                speed?: "normal" | "fast";
+                speed_resolution?: {
+                  /** @enum {string} */
+                  reason?:
+                    | "capability_absent"
+                    | "capability_ambiguous"
+                    | "value_ambiguous"
+                    | "provider_rejected";
+                  /** @enum {string} */
+                  requested: "normal" | "fast";
+                  /** @enum {string} */
+                  status: "applied" | "unsupported" | "rejected";
+                } | null;
+              };
+              task_id: string;
+            }[];
             node_controls: {
               attention_flag?: string;
               attention_producer_node_id?: string;
@@ -102695,7 +102748,7 @@ export interface operations {
                 steps_total: number;
               };
               /** @enum {string} */
-              reattempt_strategy: "failed_only" | "full_body";
+              reattempt_strategy: "failed_only" | "full_body" | "halt";
               resolved_network_participation:
                 | (
                     | {
@@ -103916,11 +103969,12 @@ export interface operations {
                     | "ratchet_restore"
                     | "requeue"
                     | "operator_rerun"
-                    | "fork_seed";
+                    | "fork_seed"
+                    | "nested_recovery";
                   /** Format: int64 */
                   parent_generation: number;
                   /** @enum {string} */
-                  reattempt_strategy: "failed_only" | "full_body";
+                  reattempt_strategy: "failed_only" | "full_body" | "halt";
                 };
                 /** Format: int64 */
                 seq: number;
@@ -104226,7 +104280,7 @@ export interface operations {
                 steps_total: number;
               };
               /** @enum {string} */
-              reattempt_strategy: "failed_only" | "full_body";
+              reattempt_strategy: "failed_only" | "full_body" | "halt";
               resolved_network_participation:
                 | (
                     | {
@@ -107042,6 +107096,286 @@ export interface operations {
       };
       /** @description Invalid Loop request */
       400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            code?: string;
+            details?: {
+              [key: string]: string;
+            };
+            diagnostic?: {
+              category: string;
+              code: string;
+              data_freshness: string;
+              doc_url?: string;
+              evidence?: {
+                [key: string]: unknown;
+              };
+              id: string;
+              message: string;
+              severity: string;
+              suggested_command?: string;
+              title: string;
+            } | null;
+            error: string;
+          };
+        };
+      };
+      /** @description Loop run not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            code?: string;
+            details?: {
+              [key: string]: string;
+            };
+            diagnostic?: {
+              category: string;
+              code: string;
+              data_freshness: string;
+              doc_url?: string;
+              evidence?: {
+                [key: string]: unknown;
+              };
+              id: string;
+              message: string;
+              severity: string;
+              suggested_command?: string;
+              title: string;
+            } | null;
+            error: string;
+          };
+        };
+      };
+      /** @description Loop conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            code?: string;
+            details?: {
+              [key: string]: string;
+            };
+            diagnostic?: {
+              category: string;
+              code: string;
+              data_freshness: string;
+              doc_url?: string;
+              evidence?: {
+                [key: string]: unknown;
+              };
+              id: string;
+              message: string;
+              severity: string;
+              suggested_command?: string;
+              title: string;
+            } | null;
+            error: string;
+          };
+        };
+      };
+      /** @description Loop operation rejected */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            code?: string;
+            details?: {
+              [key: string]: string;
+            };
+            diagnostic?: {
+              category: string;
+              code: string;
+              data_freshness: string;
+              doc_url?: string;
+              evidence?: {
+                [key: string]: unknown;
+              };
+              id: string;
+              message: string;
+              severity: string;
+              suggested_command?: string;
+              title: string;
+            } | null;
+            error: string;
+          };
+        };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            code?: string;
+            details?: {
+              [key: string]: string;
+            };
+            diagnostic?: {
+              category: string;
+              code: string;
+              data_freshness: string;
+              doc_url?: string;
+              evidence?: {
+                [key: string]: unknown;
+              };
+              id: string;
+              message: string;
+              severity: string;
+              suggested_command?: string;
+              title: string;
+            } | null;
+            error: string;
+          };
+        };
+      };
+      /** @description Loop service is not configured */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            code?: string;
+            details?: {
+              [key: string]: string;
+            };
+            diagnostic?: {
+              category: string;
+              code: string;
+              data_freshness: string;
+              doc_url?: string;
+              evidence?: {
+                [key: string]: unknown;
+              };
+              id: string;
+              message: string;
+              severity: string;
+              suggested_command?: string;
+              title: string;
+            } | null;
+            error: string;
+          };
+        };
+      };
+    };
+  };
+  recoverNestedLoopRun: {
+    parameters: {
+      query?: {
+        /** @description Act as this profile by name */
+        profile?: string;
+      };
+      header?: never;
+      path: {
+        /** @description Workspace id */
+        workspace_id: string;
+        /** @description Loop run id */
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    /** @description JSON request body */
+    requestBody: {
+      content: {
+        "application/json": {
+          request_id: string;
+          runtime: {
+            model?: string;
+            provider?: string;
+            reasoning?: string;
+            /** @enum {string} */
+            speed?: "normal" | "fast";
+          };
+        };
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            /** Format: int64 */
+            child_generation: number;
+            child_run_id: string;
+            operation_id: string;
+            /** Format: int64 */
+            parent_generation: number;
+            parent_run_id: string;
+            replayed?: boolean;
+            runtime: {
+              model?: string;
+              provider?: string;
+              reasoning?: string;
+              source: {
+                model?: string;
+                provider?: string;
+                reasoning?: string;
+                speed?: string;
+              };
+              /** @enum {string} */
+              speed?: "normal" | "fast";
+              speed_resolution?: {
+                /** @enum {string} */
+                reason?:
+                  | "capability_absent"
+                  | "capability_ambiguous"
+                  | "value_ambiguous"
+                  | "provider_rejected";
+                /** @enum {string} */
+                requested: "normal" | "fast";
+                /** @enum {string} */
+                status: "applied" | "unsupported" | "rejected";
+              } | null;
+            };
+            task_id: string;
+          };
+        };
+      };
+      /** @description Invalid Loop request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            code?: string;
+            details?: {
+              [key: string]: string;
+            };
+            diagnostic?: {
+              category: string;
+              code: string;
+              data_freshness: string;
+              doc_url?: string;
+              evidence?: {
+                [key: string]: unknown;
+              };
+              id: string;
+              message: string;
+              severity: string;
+              suggested_command?: string;
+              title: string;
+            } | null;
+            error: string;
+          };
+        };
+      };
+      /** @description Forbidden */
+      403: {
         headers: {
           [name: string]: unknown;
         };
@@ -113075,7 +113409,7 @@ export interface operations {
               iteration_cap?: number | null;
               no_progress_window?: number | null;
               /** @enum {string|null} */
-              reattempt_strategy?: "failed_only" | "full_body" | null;
+              reattempt_strategy?: "failed_only" | "full_body" | "halt" | null;
               runtime_defaults?: {
                 judge?: {
                   model?: string;
@@ -113127,7 +113461,7 @@ export interface operations {
               iteration_cap: number;
               no_progress_window: number;
               /** @enum {string} */
-              reattempt_strategy: "failed_only" | "full_body";
+              reattempt_strategy: "failed_only" | "full_body" | "halt";
               run_runtime_rules?: {
                 match: {
                   complexity?: string;
@@ -113331,7 +113665,7 @@ export interface operations {
             iteration_cap?: number | null;
             no_progress_window?: number | null;
             /** @enum {string|null} */
-            reattempt_strategy?: "failed_only" | "full_body" | null;
+            reattempt_strategy?: "failed_only" | "full_body" | "halt" | null;
             runtime_defaults?: {
               judge?: {
                 model?: string;
@@ -113394,7 +113728,7 @@ export interface operations {
               iteration_cap?: number | null;
               no_progress_window?: number | null;
               /** @enum {string|null} */
-              reattempt_strategy?: "failed_only" | "full_body" | null;
+              reattempt_strategy?: "failed_only" | "full_body" | "halt" | null;
               runtime_defaults?: {
                 judge?: {
                   model?: string;
@@ -113446,7 +113780,7 @@ export interface operations {
               iteration_cap: number;
               no_progress_window: number;
               /** @enum {string} */
-              reattempt_strategy: "failed_only" | "full_body";
+              reattempt_strategy: "failed_only" | "full_body" | "halt";
               run_runtime_rules?: {
                 match: {
                   complexity?: string;
@@ -114627,7 +114961,7 @@ export interface operations {
             iteration_cap?: number | null;
             no_progress_window?: number | null;
             /** @enum {string|null} */
-            reattempt_strategy?: "failed_only" | "full_body" | null;
+            reattempt_strategy?: "failed_only" | "full_body" | "halt" | null;
             runtime_defaults?: {
               judge?: {
                 model?: string;
@@ -114946,7 +115280,7 @@ export interface operations {
                 iteration_cap: number;
                 no_progress_window: number;
                 /** @enum {string} */
-                reattempt_strategy: "failed_only" | "full_body";
+                reattempt_strategy: "failed_only" | "full_body" | "halt";
                 run_runtime_rules?: {
                   match: {
                     complexity?: string;
@@ -115304,7 +115638,7 @@ export interface operations {
                 steps_total: number;
               };
               /** @enum {string} */
-              reattempt_strategy: "failed_only" | "full_body";
+              reattempt_strategy: "failed_only" | "full_body" | "halt";
               resolved_network_participation:
                 | (
                     | {
@@ -115602,7 +115936,7 @@ export interface operations {
                 iteration_cap: number;
                 no_progress_window: number;
                 /** @enum {string} */
-                reattempt_strategy: "failed_only" | "full_body";
+                reattempt_strategy: "failed_only" | "full_body" | "halt";
                 run_runtime_rules?: {
                   match: {
                     complexity?: string;
@@ -115960,7 +116294,7 @@ export interface operations {
                 steps_total: number;
               };
               /** @enum {string} */
-              reattempt_strategy: "failed_only" | "full_body";
+              reattempt_strategy: "failed_only" | "full_body" | "halt";
               resolved_network_participation:
                 | (
                     | {

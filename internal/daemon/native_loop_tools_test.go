@@ -95,6 +95,81 @@ func TestDaemonNativeLoopTools(t *testing.T) {
 		requireNativeStructuredContains(t, result, []byte(`"replaced_run_id":"run-old"`))
 	})
 
+	t.Run("Should recover a nested child with the caller runtime and idempotency key", func(t *testing.T) {
+		t.Parallel()
+
+		var captured contract.RecoverNestedLoopRequest
+		registry := newDaemonNativeRegistry(t, &daemonNativeToolsDeps{
+			Sessions: nativeNetworkTestSessionManager("ws-alpha"),
+			Loops: func() core.LoopService {
+				return &nativeLoopServiceStub{
+					recoverNestedLoopRunFn: func(
+						_ context.Context,
+						workspaceID string,
+						runID string,
+						request contract.RecoverNestedLoopRequest,
+						_ taskpkg.ActorContext,
+					) (contract.RecoverNestedLoopResponse, error) {
+						if workspaceID != "ws-alpha" || runID != "parent-1" {
+							t.Fatalf("RecoverNestedLoopRun target = %q/%q", workspaceID, runID)
+						}
+						captured = request
+						return contract.RecoverNestedLoopResponse{
+							OperationID: "op-1", ParentRunID: runID, ParentGeneration: 4,
+							ChildRunID: "child-1", ChildGeneration: 2, TaskID: "task-b",
+						}, nil
+					},
+				}
+			},
+		}, nativeApproveAllPolicyInputs())
+
+		result, err := registry.Call(t.Context(), toolspkg.Scope{SessionID: "sess-alpha", WorkspaceID: "ws-alpha"},
+			toolspkg.CallRequest{ToolID: toolspkg.ToolIDLoopRecoverNested,
+				Input: json.RawMessage(`{"run_id":"parent-1","request_id":"req-1","runtime":{"provider":"openai","model":"gpt-5"}}`)})
+		if err != nil {
+			t.Fatalf("Registry.Call(loop_recover_nested) error = %v", err)
+		}
+		if captured.RequestID != "req-1" || captured.Runtime.Provider != "openai" || captured.Runtime.Model != "gpt-5" {
+			t.Fatalf("RecoverNestedLoopRun request = %#v", captured)
+		}
+		requireNativeStructuredContains(t, result, []byte(`"child_run_id":"child-1"`))
+	})
+
+	t.Run("Should expose a missing nested recovery target as a native conflict", func(t *testing.T) {
+		t.Parallel()
+
+		domainErr := &looppkg.ReasonError{
+			Code: looppkg.ReasonCodeNestedRecoveryConflict,
+			Err:  fmt.Errorf("%w: %w", looppkg.ErrNestedRecoveryConflict, looppkg.ErrNestedRecoveryTargetNotFound),
+		}
+		registry := newDaemonNativeRegistry(t, &daemonNativeToolsDeps{
+			Sessions: nativeNetworkTestSessionManager("ws-alpha"),
+			Loops: func() core.LoopService {
+				return &nativeLoopServiceStub{recoverNestedLoopRunFn: func(
+					context.Context,
+					string,
+					string,
+					contract.RecoverNestedLoopRequest,
+					taskpkg.ActorContext,
+				) (contract.RecoverNestedLoopResponse, error) {
+					return contract.RecoverNestedLoopResponse{}, domainErr
+				}}
+			},
+		}, nativeApproveAllPolicyInputs())
+
+		_, err := registry.Call(
+			t.Context(),
+			toolspkg.Scope{SessionID: "sess-alpha", WorkspaceID: "ws-alpha"},
+			toolspkg.CallRequest{ToolID: toolspkg.ToolIDLoopRecoverNested,
+				Input: json.RawMessage(`{"run_id":"parent-1","request_id":"req-1","runtime":{"provider":"openai","model":"gpt-5"}}`)},
+		)
+		var toolErr *toolspkg.ToolError
+		if !errors.As(err, &toolErr) || toolErr.Code != toolspkg.ErrorCodeConflict ||
+			!errors.Is(err, looppkg.ErrNestedRecoveryTargetNotFound) {
+			t.Fatalf("Registry.Call(loop_recover_nested) error = %#v, want target conflict", err)
+		}
+	})
+
 	t.Run("Should forward the bounded catalog query within caller workspace scope", func(t *testing.T) {
 		t.Parallel()
 
@@ -1605,6 +1680,7 @@ type nativeLoopServiceStub struct {
 	killLoopNodeFn                 func(context.Context, string, string, string, contract.LoopNodeMutationRequest, taskpkg.ActorContext) (contract.LoopMutationResponse, error)
 	requeueLoopNodeFn              func(context.Context, string, string, string, contract.LoopNodeMutationRequest, taskpkg.ActorContext) (contract.LoopMutationResponse, error)
 	amendLoopNodeFn                func(context.Context, string, string, string, contract.LoopNodeAmendRequest, taskpkg.ActorContext) (contract.LoopNodeAmendResponse, error)
+	recoverNestedLoopRunFn         func(context.Context, string, string, contract.RecoverNestedLoopRequest, taskpkg.ActorContext) (contract.RecoverNestedLoopResponse, error)
 }
 
 var _ core.LoopService = (*nativeLoopServiceStub)(nil)
@@ -1906,6 +1982,19 @@ func (s *nativeLoopServiceStub) ForkLoopRun(
 	context.Context, string, string, contract.ForkLoopRequest, taskpkg.ActorContext,
 ) (contract.ForkLoopResponse, error) {
 	return contract.ForkLoopResponse{}, errors.New("unexpected ForkLoopRun call")
+}
+
+func (s *nativeLoopServiceStub) RecoverNestedLoopRun(
+	ctx context.Context,
+	workspaceID string,
+	runID string,
+	request contract.RecoverNestedLoopRequest,
+	actor taskpkg.ActorContext,
+) (contract.RecoverNestedLoopResponse, error) {
+	if s.recoverNestedLoopRunFn == nil {
+		return contract.RecoverNestedLoopResponse{}, errors.New("unexpected RecoverNestedLoopRun call")
+	}
+	return s.recoverNestedLoopRunFn(ctx, workspaceID, runID, request, actor)
 }
 
 func (s *nativeLoopServiceStub) CancelLoopRun(

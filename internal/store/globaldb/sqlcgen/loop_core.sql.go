@@ -295,6 +295,84 @@ func (q *Queries) GetLoopConfig(ctx context.Context, arg GetLoopConfigParams) (G
 	return i, err
 }
 
+const getLoopNestedRecovery = `-- name: GetLoopNestedRecovery :one
+SELECT operation_id, parent_run_id, parent_generation, parent_node_id, parent_item_index,
+       child_run_id, child_generation, child_node_id, child_item_index, task_id, runtime_json, created_at
+FROM loop_nested_recoveries
+WHERE workspace_id = ?1 AND operation_id = ?2
+`
+
+type GetLoopNestedRecoveryParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	OperationID string `json:"operation_id"`
+}
+
+type GetLoopNestedRecoveryRow struct {
+	OperationID      string    `json:"operation_id"`
+	ParentRunID      string    `json:"parent_run_id"`
+	ParentGeneration int64     `json:"parent_generation"`
+	ParentNodeID     string    `json:"parent_node_id"`
+	ParentItemIndex  int64     `json:"parent_item_index"`
+	ChildRunID       string    `json:"child_run_id"`
+	ChildGeneration  int64     `json:"child_generation"`
+	ChildNodeID      string    `json:"child_node_id"`
+	ChildItemIndex   int64     `json:"child_item_index"`
+	TaskID           string    `json:"task_id"`
+	RuntimeJson      string    `json:"runtime_json"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+func (q *Queries) GetLoopNestedRecovery(ctx context.Context, arg GetLoopNestedRecoveryParams) (GetLoopNestedRecoveryRow, error) {
+	row := q.db.QueryRowContext(ctx, getLoopNestedRecovery, arg.WorkspaceID, arg.OperationID)
+	var i GetLoopNestedRecoveryRow
+	err := row.Scan(
+		&i.OperationID,
+		&i.ParentRunID,
+		&i.ParentGeneration,
+		&i.ParentNodeID,
+		&i.ParentItemIndex,
+		&i.ChildRunID,
+		&i.ChildGeneration,
+		&i.ChildNodeID,
+		&i.ChildItemIndex,
+		&i.TaskID,
+		&i.RuntimeJson,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getLoopNestedRecoveryRuntime = `-- name: GetLoopNestedRecoveryRuntime :one
+SELECT runtime_json
+FROM loop_nested_recoveries
+WHERE workspace_id = ?1
+  AND child_run_id = ?2
+  AND child_generation = ?3
+  AND child_node_id = ?4
+  AND child_item_index = ?5
+`
+
+type GetLoopNestedRecoveryRuntimeParams struct {
+	WorkspaceID     string `json:"workspace_id"`
+	ChildRunID      string `json:"child_run_id"`
+	ChildGeneration int64  `json:"child_generation"`
+	ChildNodeID     string `json:"child_node_id"`
+	ChildItemIndex  int64  `json:"child_item_index"`
+}
+
+func (q *Queries) GetLoopNestedRecoveryRuntime(ctx context.Context, arg GetLoopNestedRecoveryRuntimeParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getLoopNestedRecoveryRuntime,
+		arg.WorkspaceID,
+		arg.ChildRunID,
+		arg.ChildGeneration,
+		arg.ChildNodeID,
+		arg.ChildItemIndex,
+	)
+	var runtime_json string
+	err := row.Scan(&runtime_json)
+	return runtime_json, err
+}
+
 const getLoopRun = `-- name: GetLoopRun :one
 SELECT id, profile_id, workspace_id, loop_name, status, historical, completion_state, forked_from_run_id, forked_from_generation, generation, reattempt_strategy, last_progress_at, budget_tokens, budget_wall_sec, budget_on_exceeded, tokens_used, parent_loop_run_id, pause_requested, inputs_json, created_at, iteration_cap, started_by_kind, started_by_ref, started_origin_kind, started_origin_ref, started_at, definition_version, definition_digest, active_gate_id, active_human_criteria_json, budget_approval_seq, start_metadata_json, origin_kind, origin_session_id, goal_cleared_at, budget_version, goal_context_nudge_ratio, control_actor_kind, control_actor_id, control_requested_at, origin_creation_profile_ref, origin_policy_spec_digest, origin_creation_digest, network_spec_json, network_mode, network_channel, network_source, best_generation, best_score, cancel_requested, cancel_kind FROM loop_runs WHERE workspace_id = ?1 AND id = ?2
 `
@@ -502,6 +580,53 @@ func (q *Queries) InsertLoopConfig(ctx context.Context, arg InsertLoopConfigPara
 	return err
 }
 
+const insertLoopNestedRecovery = `-- name: InsertLoopNestedRecovery :exec
+INSERT INTO loop_nested_recoveries (
+  workspace_id, operation_id, parent_run_id, parent_generation, parent_node_id,
+  parent_item_index, child_run_id, child_generation, child_node_id, child_item_index,
+  task_id, runtime_json, created_at
+) VALUES (
+  ?1, ?2, ?3, ?4,
+  ?5, ?6, ?7, ?8,
+  ?9, ?10, ?11, ?12, ?13
+)
+`
+
+type InsertLoopNestedRecoveryParams struct {
+	WorkspaceID      string    `json:"workspace_id"`
+	OperationID      string    `json:"operation_id"`
+	ParentRunID      string    `json:"parent_run_id"`
+	ParentGeneration int64     `json:"parent_generation"`
+	ParentNodeID     string    `json:"parent_node_id"`
+	ParentItemIndex  int64     `json:"parent_item_index"`
+	ChildRunID       string    `json:"child_run_id"`
+	ChildGeneration  int64     `json:"child_generation"`
+	ChildNodeID      string    `json:"child_node_id"`
+	ChildItemIndex   int64     `json:"child_item_index"`
+	TaskID           string    `json:"task_id"`
+	RuntimeJson      string    `json:"runtime_json"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+func (q *Queries) InsertLoopNestedRecovery(ctx context.Context, arg InsertLoopNestedRecoveryParams) error {
+	_, err := q.db.ExecContext(ctx, insertLoopNestedRecovery,
+		arg.WorkspaceID,
+		arg.OperationID,
+		arg.ParentRunID,
+		arg.ParentGeneration,
+		arg.ParentNodeID,
+		arg.ParentItemIndex,
+		arg.ChildRunID,
+		arg.ChildGeneration,
+		arg.ChildNodeID,
+		arg.ChildItemIndex,
+		arg.TaskID,
+		arg.RuntimeJson,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const insertLoopRun = `-- name: InsertLoopRun :exec
 INSERT INTO loop_runs (
   profile_id,
@@ -670,6 +795,71 @@ func (q *Queries) InsertLoopUIAnnotation(ctx context.Context, arg InsertLoopUIAn
 		arg.Y,
 	)
 	return err
+}
+
+const listLoopNestedRecoveries = `-- name: ListLoopNestedRecoveries :many
+SELECT operation_id, parent_run_id, parent_generation, parent_node_id, parent_item_index,
+       child_run_id, child_generation, child_node_id, child_item_index, task_id, runtime_json, created_at
+FROM loop_nested_recoveries
+WHERE workspace_id = ?1
+  AND (parent_run_id = ?2 OR child_run_id = ?2)
+ORDER BY created_at ASC, operation_id ASC
+`
+
+type ListLoopNestedRecoveriesParams struct {
+	WorkspaceID string `json:"workspace_id"`
+	RunID       string `json:"run_id"`
+}
+
+type ListLoopNestedRecoveriesRow struct {
+	OperationID      string    `json:"operation_id"`
+	ParentRunID      string    `json:"parent_run_id"`
+	ParentGeneration int64     `json:"parent_generation"`
+	ParentNodeID     string    `json:"parent_node_id"`
+	ParentItemIndex  int64     `json:"parent_item_index"`
+	ChildRunID       string    `json:"child_run_id"`
+	ChildGeneration  int64     `json:"child_generation"`
+	ChildNodeID      string    `json:"child_node_id"`
+	ChildItemIndex   int64     `json:"child_item_index"`
+	TaskID           string    `json:"task_id"`
+	RuntimeJson      string    `json:"runtime_json"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+func (q *Queries) ListLoopNestedRecoveries(ctx context.Context, arg ListLoopNestedRecoveriesParams) ([]ListLoopNestedRecoveriesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLoopNestedRecoveries, arg.WorkspaceID, arg.RunID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLoopNestedRecoveriesRow{}
+	for rows.Next() {
+		var i ListLoopNestedRecoveriesRow
+		if err := rows.Scan(
+			&i.OperationID,
+			&i.ParentRunID,
+			&i.ParentGeneration,
+			&i.ParentNodeID,
+			&i.ParentItemIndex,
+			&i.ChildRunID,
+			&i.ChildGeneration,
+			&i.ChildNodeID,
+			&i.ChildItemIndex,
+			&i.TaskID,
+			&i.RuntimeJson,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listLoopRouteCauses = `-- name: ListLoopRouteCauses :many

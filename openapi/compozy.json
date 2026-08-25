@@ -248992,7 +248992,8 @@
                           "reattempt_strategy": {
                             "enum": [
                               "failed_only",
-                              "full_body"
+                              "full_body",
+                              "halt"
                             ],
                             "type": "string"
                           },
@@ -251477,7 +251478,8 @@
                               "ratchet_restore",
                               "requeue",
                               "operator_rerun",
-                              "fork_seed"
+                              "fork_seed",
+                              "nested_recovery"
                             ],
                             "type": "string"
                           },
@@ -252429,6 +252431,118 @@
                       ],
                       "type": "object"
                     },
+                    "nested_recoveries": {
+                      "items": {
+                        "properties": {
+                          "child_generation": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "child_run_id": {
+                            "type": "string"
+                          },
+                          "operation_id": {
+                            "type": "string"
+                          },
+                          "parent_generation": {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          "parent_run_id": {
+                            "type": "string"
+                          },
+                          "runtime": {
+                            "properties": {
+                              "model": {
+                                "type": "string"
+                              },
+                              "provider": {
+                                "type": "string"
+                              },
+                              "reasoning": {
+                                "type": "string"
+                              },
+                              "source": {
+                                "properties": {
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "provider": {
+                                    "type": "string"
+                                  },
+                                  "reasoning": {
+                                    "type": "string"
+                                  },
+                                  "speed": {
+                                    "type": "string"
+                                  }
+                                },
+                                "type": "object"
+                              },
+                              "speed": {
+                                "enum": [
+                                  "normal",
+                                  "fast"
+                                ],
+                                "type": "string"
+                              },
+                              "speed_resolution": {
+                                "nullable": true,
+                                "properties": {
+                                  "reason": {
+                                    "enum": [
+                                      "capability_absent",
+                                      "capability_ambiguous",
+                                      "value_ambiguous",
+                                      "provider_rejected"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "requested": {
+                                    "enum": [
+                                      "normal",
+                                      "fast"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "enum": [
+                                      "applied",
+                                      "unsupported",
+                                      "rejected"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "requested",
+                                  "status"
+                                ],
+                                "type": "object"
+                              }
+                            },
+                            "required": [
+                              "source"
+                            ],
+                            "type": "object"
+                          },
+                          "task_id": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "child_generation",
+                          "child_run_id",
+                          "operation_id",
+                          "parent_generation",
+                          "parent_run_id",
+                          "runtime",
+                          "task_id"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
                     "node_controls": {
                       "items": {
                         "properties": {
@@ -252802,7 +252916,8 @@
                         "reattempt_strategy": {
                           "enum": [
                             "failed_only",
-                            "full_body"
+                            "full_body",
+                            "halt"
                           ],
                           "type": "string"
                         },
@@ -253163,6 +253278,7 @@
                   "required": [
                     "amendments",
                     "materialized_contract",
+                    "nested_recoveries",
                     "node_controls",
                     "requests",
                     "run",
@@ -255862,7 +255978,8 @@
                                 "ratchet_restore",
                                 "requeue",
                                 "operator_rerun",
-                                "fork_seed"
+                                "fork_seed",
+                                "nested_recovery"
                               ],
                               "type": "string"
                             },
@@ -255873,7 +255990,8 @@
                             "reattempt_strategy": {
                               "enum": [
                                 "failed_only",
-                                "full_body"
+                                "full_body",
+                                "halt"
                               ],
                               "type": "string"
                             }
@@ -256662,7 +256780,8 @@
                         "reattempt_strategy": {
                           "enum": [
                             "failed_only",
-                            "full_body"
+                            "full_body",
+                            "halt"
                           ],
                           "type": "string"
                         },
@@ -264383,6 +264502,720 @@
           }
         },
         "summary": "Pause one Loop run",
+        "tags": [
+          "loops"
+        ],
+        "x-compozy-transports": [
+          "http",
+          "uds"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/loop-runs/{run_id}/recover-nested": {
+      "post": {
+        "operationId": "recoverNestedLoopRun",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Loop run id",
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Act as this profile by name",
+            "in": "query",
+            "name": "profile",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "request_id": {
+                    "type": "string"
+                  },
+                  "runtime": {
+                    "properties": {
+                      "model": {
+                        "type": "string"
+                      },
+                      "provider": {
+                        "type": "string"
+                      },
+                      "reasoning": {
+                        "type": "string"
+                      },
+                      "speed": {
+                        "enum": [
+                          "normal",
+                          "fast"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "request_id",
+                  "runtime"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "description": "JSON request body",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "child_generation": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "child_run_id": {
+                      "type": "string"
+                    },
+                    "operation_id": {
+                      "type": "string"
+                    },
+                    "parent_generation": {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    "parent_run_id": {
+                      "type": "string"
+                    },
+                    "replayed": {
+                      "type": "boolean"
+                    },
+                    "runtime": {
+                      "properties": {
+                        "model": {
+                          "type": "string"
+                        },
+                        "provider": {
+                          "type": "string"
+                        },
+                        "reasoning": {
+                          "type": "string"
+                        },
+                        "source": {
+                          "properties": {
+                            "model": {
+                              "type": "string"
+                            },
+                            "provider": {
+                              "type": "string"
+                            },
+                            "reasoning": {
+                              "type": "string"
+                            },
+                            "speed": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "speed": {
+                          "enum": [
+                            "normal",
+                            "fast"
+                          ],
+                          "type": "string"
+                        },
+                        "speed_resolution": {
+                          "nullable": true,
+                          "properties": {
+                            "reason": {
+                              "enum": [
+                                "capability_absent",
+                                "capability_ambiguous",
+                                "value_ambiguous",
+                                "provider_rejected"
+                              ],
+                              "type": "string"
+                            },
+                            "requested": {
+                              "enum": [
+                                "normal",
+                                "fast"
+                              ],
+                              "type": "string"
+                            },
+                            "status": {
+                              "enum": [
+                                "applied",
+                                "unsupported",
+                                "rejected"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "requested",
+                            "status"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "source"
+                      ],
+                      "type": "object"
+                    },
+                    "task_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "child_generation",
+                    "child_run_id",
+                    "operation_id",
+                    "parent_generation",
+                    "parent_run_id",
+                    "runtime",
+                    "task_id"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "diagnostic": {
+                      "nullable": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "data_freshness": {
+                          "type": "string"
+                        },
+                        "doc_url": {
+                          "type": "string"
+                        },
+                        "evidence": {
+                          "additionalProperties": {},
+                          "type": "object"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "severity": {
+                          "type": "string"
+                        },
+                        "suggested_command": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "category",
+                        "code",
+                        "data_freshness",
+                        "id",
+                        "message",
+                        "severity",
+                        "title"
+                      ],
+                      "type": "object"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Invalid Loop request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "diagnostic": {
+                      "nullable": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "data_freshness": {
+                          "type": "string"
+                        },
+                        "doc_url": {
+                          "type": "string"
+                        },
+                        "evidence": {
+                          "additionalProperties": {},
+                          "type": "object"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "severity": {
+                          "type": "string"
+                        },
+                        "suggested_command": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "category",
+                        "code",
+                        "data_freshness",
+                        "id",
+                        "message",
+                        "severity",
+                        "title"
+                      ],
+                      "type": "object"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "diagnostic": {
+                      "nullable": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "data_freshness": {
+                          "type": "string"
+                        },
+                        "doc_url": {
+                          "type": "string"
+                        },
+                        "evidence": {
+                          "additionalProperties": {},
+                          "type": "object"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "severity": {
+                          "type": "string"
+                        },
+                        "suggested_command": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "category",
+                        "code",
+                        "data_freshness",
+                        "id",
+                        "message",
+                        "severity",
+                        "title"
+                      ],
+                      "type": "object"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Loop run not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "diagnostic": {
+                      "nullable": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "data_freshness": {
+                          "type": "string"
+                        },
+                        "doc_url": {
+                          "type": "string"
+                        },
+                        "evidence": {
+                          "additionalProperties": {},
+                          "type": "object"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "severity": {
+                          "type": "string"
+                        },
+                        "suggested_command": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "category",
+                        "code",
+                        "data_freshness",
+                        "id",
+                        "message",
+                        "severity",
+                        "title"
+                      ],
+                      "type": "object"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Loop conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "diagnostic": {
+                      "nullable": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "data_freshness": {
+                          "type": "string"
+                        },
+                        "doc_url": {
+                          "type": "string"
+                        },
+                        "evidence": {
+                          "additionalProperties": {},
+                          "type": "object"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "severity": {
+                          "type": "string"
+                        },
+                        "suggested_command": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "category",
+                        "code",
+                        "data_freshness",
+                        "id",
+                        "message",
+                        "severity",
+                        "title"
+                      ],
+                      "type": "object"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Loop operation rejected"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "diagnostic": {
+                      "nullable": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "data_freshness": {
+                          "type": "string"
+                        },
+                        "doc_url": {
+                          "type": "string"
+                        },
+                        "evidence": {
+                          "additionalProperties": {},
+                          "type": "object"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "severity": {
+                          "type": "string"
+                        },
+                        "suggested_command": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "category",
+                        "code",
+                        "data_freshness",
+                        "id",
+                        "message",
+                        "severity",
+                        "title"
+                      ],
+                      "type": "object"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Internal server error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "diagnostic": {
+                      "nullable": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "data_freshness": {
+                          "type": "string"
+                        },
+                        "doc_url": {
+                          "type": "string"
+                        },
+                        "evidence": {
+                          "additionalProperties": {},
+                          "type": "object"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "severity": {
+                          "type": "string"
+                        },
+                        "suggested_command": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "category",
+                        "code",
+                        "data_freshness",
+                        "id",
+                        "message",
+                        "severity",
+                        "title"
+                      ],
+                      "type": "object"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Loop service is not configured"
+          }
+        },
+        "summary": "Recover one failed direct child Loop run in the same lineage",
         "tags": [
           "loops"
         ],
@@ -280910,7 +281743,8 @@
                         "reattempt_strategy": {
                           "enum": [
                             "failed_only",
-                            "full_body"
+                            "full_body",
+                            "halt"
                           ],
                           "nullable": true,
                           "type": "string"
@@ -281074,7 +281908,8 @@
                         "reattempt_strategy": {
                           "enum": [
                             "failed_only",
-                            "full_body"
+                            "full_body",
+                            "halt"
                           ],
                           "type": "string"
                         },
@@ -281652,7 +282487,8 @@
                       "reattempt_strategy": {
                         "enum": [
                           "failed_only",
-                          "full_body"
+                          "full_body",
+                          "halt"
                         ],
                         "nullable": true,
                         "type": "string"
@@ -281845,7 +282681,8 @@
                         "reattempt_strategy": {
                           "enum": [
                             "failed_only",
-                            "full_body"
+                            "full_body",
+                            "halt"
                           ],
                           "nullable": true,
                           "type": "string"
@@ -282009,7 +282846,8 @@
                         "reattempt_strategy": {
                           "enum": [
                             "failed_only",
-                            "full_body"
+                            "full_body",
+                            "halt"
                           ],
                           "type": "string"
                         },
@@ -284991,7 +285829,8 @@
                       "reattempt_strategy": {
                         "enum": [
                           "failed_only",
-                          "full_body"
+                          "full_body",
+                          "halt"
                         ],
                         "nullable": true,
                         "type": "string"
@@ -285993,7 +286832,8 @@
                             "reattempt_strategy": {
                               "enum": [
                                 "failed_only",
-                                "full_body"
+                                "full_body",
+                                "halt"
                               ],
                               "type": "string"
                             },
@@ -287145,7 +287985,8 @@
                         "reattempt_strategy": {
                           "enum": [
                             "failed_only",
-                            "full_body"
+                            "full_body",
+                            "halt"
                           ],
                           "type": "string"
                         },
@@ -288052,7 +288893,8 @@
                             "reattempt_strategy": {
                               "enum": [
                                 "failed_only",
-                                "full_body"
+                                "full_body",
+                                "halt"
                               ],
                               "type": "string"
                             },
@@ -289204,7 +290046,8 @@
                         "reattempt_strategy": {
                           "enum": [
                             "failed_only",
-                            "full_body"
+                            "full_body",
+                            "halt"
                           ],
                           "type": "string"
                         },

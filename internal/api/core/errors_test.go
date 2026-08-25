@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -248,6 +249,24 @@ func TestLoopErrorHelpers(t *testing.T) {
 		{
 			name: "Should map Loop transition conflicts to conflict",
 			err:  looppkg.ErrTransitionConflict,
+			want: http.StatusConflict,
+		},
+		{
+			name: "Should map nested recovery lineage conflicts to conflict",
+			err:  looppkg.ErrNestedRecoveryConflict,
+			want: http.StatusConflict,
+		},
+		{
+			name: "Should map a missing nested recovery target to conflict",
+			err: &looppkg.ReasonError{
+				Code: looppkg.ReasonCodeNestedRecoveryConflict,
+				Err:  fmt.Errorf("%w: %w", looppkg.ErrNestedRecoveryConflict, looppkg.ErrNestedRecoveryTargetNotFound),
+			},
+			want: http.StatusConflict,
+		},
+		{
+			name: "Should map nested recovery budget exhaustion to conflict",
+			err:  looppkg.ErrNestedRecoveryBudgetExhausted,
 			want: http.StatusConflict,
 		},
 		{

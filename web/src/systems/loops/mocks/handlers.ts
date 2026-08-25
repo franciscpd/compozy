@@ -221,6 +221,7 @@ export const handlers: HttpHandler[] = [
     }
     return HttpResponse.json({
       config: loopConfigFixture,
+      config_revision: 1,
       effective_config: loopEffectiveConfigFixture,
     });
   }),
@@ -228,6 +229,7 @@ export const handlers: HttpHandler[] = [
     const body = (await request.json().catch(() => ({}))) as Partial<LoopConfigUpdateRequest>;
     return HttpResponse.json({
       config: body.config ?? loopConfigFixture,
+      config_revision: 1,
       effective_config: loopEffectiveConfigFixture,
     });
   }),

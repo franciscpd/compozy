@@ -1,0 +1,81 @@
+{
+    "version": 2,
+    "agents": [
+        {
+            "name": "nested_initial",
+            "provider": "acpmock",
+            "permissions": "approve-all",
+            "prompt": "Exercise nested Loop recovery.",
+            "turns": [
+                {
+                    "name": "task-a-success",
+                    "match": { "turn_source": "user", "user_text": "implement task-a" },
+                    "steps": [
+                        {
+                            "kind": "assistant",
+                            "text": "```json\n{\"ok\":true,\"task\":\"task-a\"}\n```"
+                        }
+                    ]
+                },
+                {
+                    "name": "task-b-failure",
+                    "match": { "turn_source": "user", "user_text": "implement task-b" },
+                    "steps": [
+                        { "kind": "assistant", "text": "```json\n{\"unexpected\":true}\n```" }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "nested_recovery_fail",
+            "provider": "recovery-fail",
+            "model": "fail-model",
+            "permissions": "approve-all",
+            "prompt": "Fail the first nested recovery.",
+            "config_options": [
+                {
+                    "id": "model",
+                    "name": "Model",
+                    "current": "fail-model",
+                    "values": [{ "value": "fail-model", "label": "Failure model" }]
+                }
+            ],
+            "turns": [
+                {
+                    "name": "task-b-failure",
+                    "match": { "turn_source": "user", "user_text_contains": "implement task-b" },
+                    "steps": [
+                        { "kind": "assistant", "text": "```json\n{\"unexpected\":true}\n```" }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "nested_recovery_success",
+            "provider": "recovery-success",
+            "model": "success-model",
+            "permissions": "approve-all",
+            "prompt": "Complete the second nested recovery.",
+            "config_options": [
+                {
+                    "id": "model",
+                    "name": "Model",
+                    "current": "success-model",
+                    "values": [{ "value": "success-model", "label": "Success model" }]
+                }
+            ],
+            "turns": [
+                {
+                    "name": "task-b-success",
+                    "match": { "turn_source": "user", "user_text_contains": "implement task-b" },
+                    "steps": [
+                        {
+                            "kind": "assistant",
+                            "text": "```json\n{\"ok\":true,\"task\":\"task-b\"}\n```"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

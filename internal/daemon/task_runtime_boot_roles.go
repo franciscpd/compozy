@@ -227,6 +227,11 @@ func newLoopCoordinatorRunner(
 	if runtimeCatalog != nil {
 		options = append(options, looppkg.WithCoordinatorRuntimeCatalog(runtimeCatalog))
 	}
+	if recoveryRuntimes, recoveryOK := store.(looppkg.NestedRecoveryRuntimeReader); recoveryOK {
+		options = append(options, looppkg.WithCoordinatorNestedRecoveryRuntimeReader(recoveryRuntimes))
+	} else if logger != nil {
+		logger.Warn("daemon: loop coordinator nested recovery runtime reader unavailable")
+	}
 	if targetHealth != nil {
 		options = append(options, looppkg.WithCoordinatorTargetHealth(targetHealth))
 	}

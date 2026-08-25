@@ -33,6 +33,8 @@ const (
 
 	// RuntimeSourceRun identifies a per-run runtime rule.
 	RuntimeSourceRun RuntimeSource = "run"
+	// RuntimeSourceRecovery identifies an exact generation-cell recovery override.
+	RuntimeSourceRecovery RuntimeSource = "recovery"
 	// RuntimeSourceFrontmatter identifies task frontmatter.
 	RuntimeSourceFrontmatter RuntimeSource = "frontmatter"
 	// RuntimeSourceConfig identifies a configured runtime rule.
@@ -80,6 +82,24 @@ type ItemRuntime struct {
 	Frontmatter RuntimeSpec
 	Node        RuntimeSpec
 	Input       RuntimeSpec
+	Recovery    RuntimeSpec
+}
+
+// NestedRecoveryRuntimeKey is the full workspace-scoped generation-cell coordinate.
+type NestedRecoveryRuntimeKey struct {
+	WorkspaceID WorkspaceID
+	RunID       RunID
+	Generation  int
+	NodeID      NodeID
+	ItemIndex   int
+}
+
+// NestedRecoveryRuntimeReader reads generation-scoped ephemeral runtime overrides.
+type NestedRecoveryRuntimeReader interface {
+	GetNestedRecoveryRuntime(
+		context.Context,
+		NestedRecoveryRuntimeKey,
+	) (RuntimeSpec, bool, error)
 }
 
 // RuntimeValidationItem is one deterministic runtime validation diagnostic.
