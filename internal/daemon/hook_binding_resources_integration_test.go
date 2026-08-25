@@ -5,16 +5,24 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/compozy/compozy/internal/acp"
+	extensionpkg "github.com/compozy/compozy/internal/extension"
 	hookspkg "github.com/compozy/compozy/internal/hooks"
 	"github.com/compozy/compozy/internal/resources"
 	"github.com/compozy/compozy/internal/session"
+	"github.com/compozy/compozy/internal/store"
 	"github.com/compozy/compozy/internal/testutil"
+	"github.com/compozy/compozy/internal/toolruntime"
+	toolspkg "github.com/compozy/compozy/internal/tools"
+	"go.uber.org/goleak"
 )
 
 type hookBindingIntegrationHarness struct {
@@ -23,6 +31,145 @@ type hookBindingIntegrationHarness struct {
 	hooks    *hookspkg.Hooks
 	notifier *hooksNotifier
 	actor    resources.MutationActor
+}
+
+func TestGeneratedRequiredExtensionHookContainsMatchedToolCall(t *testing.T) {
+	t.Cleanup(func() { goleak.VerifyNone(t, goleak.IgnoreCurrent()) })
+
+	ctx := testutil.Context(t)
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("filepath.Abs(repo root) error = %v", err)
+	}
+	failureMarker := filepath.Join(t.TempDir(), "deliberate-hook-failure.json")
+	t.Setenv("COMPOZY_REQUIRED_HOOK_MARKER", failureMarker)
+	sourceDir := filepath.Join(repoRoot, "internal", "daemon", "testdata", "required-hook-fixture")
+
+	buildCtx, cancelBuild := context.WithTimeout(ctx, time.Minute)
+	defer cancelBuild()
+	built, err := extensionpkg.BuildBundle(buildCtx, extensionpkg.BuildRequest{
+		SourceDir: sourceDir,
+		OutputDir: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("BuildBundle(required hook fixture) error = %v", err)
+	}
+
+	database := openDaemonTestGlobalDB(t)
+	extensionRegistry := extensionpkg.NewRegistry(database.DB())
+	if err := extensionRegistry.Install(built.Manifest, built.GenerationDir, built.GenerationHash); err != nil {
+		t.Fatalf("Registry.Install(required hook fixture) error = %v", err)
+	}
+
+	processStore := toolruntime.NewMemoryStore()
+	processRegistry := toolruntime.NewRegistry(processStore)
+	manager := extensionpkg.NewManager(
+		extensionRegistry,
+		extensionpkg.WithHealthCheckTimeout(100*time.Millisecond),
+		extensionpkg.WithSubprocessSignalGrace(25*time.Millisecond),
+		extensionpkg.WithProcessRegistry(processRegistry),
+	)
+	if err := manager.Start(ctx); err != nil {
+		t.Fatalf("Manager.Start(required hook fixture) error = %v", err)
+	}
+	managerRunning := true
+	t.Cleanup(func() {
+		if managerRunning {
+			if err := manager.Stop(testutil.Context(t)); err != nil {
+				t.Fatalf("Manager.Stop(required hook fixture) cleanup error = %v", err)
+			}
+		}
+	})
+
+	declarations, err := manager.HookDeclarationsForProfiles(ctx, []extensionpkg.ProfileLens{{
+		ID: store.DefaultProfileID, Name: daemonDefaultProfileName,
+	}})
+	if err != nil {
+		t.Fatalf("HookDeclarationsForProfiles() error = %v", err)
+	}
+	if got, want := len(declarations), 1; got != want {
+		t.Fatalf("len(HookDeclarationsForProfiles()) = %d, want %d: %#v", got, want, declarations)
+	}
+
+	harness := newHookBindingIntegrationHarness(t, nil, processRegistry)
+	harness.putBinding(t, extensionHookBindingID("required-hook-fixture", "publisher-guard"), 0,
+		resources.ResourceScope{Kind: resources.ResourceScopeKindUser}, declarations[0])
+	if err := harness.driver.RunBoot(ctx); err != nil {
+		t.Fatalf("driver.RunBoot() error = %v", err)
+	}
+
+	catalog, err := harness.hooks.Catalog(hookspkg.CatalogFilter{Event: hookspkg.HookToolPreCall})
+	if err != nil {
+		t.Fatalf("hooks.Catalog(tool.pre_call) error = %v", err)
+	}
+	if got, want := len(catalog), 1; got != want {
+		t.Fatalf("len(hooks.Catalog(tool.pre_call)) = %d, want %d: %#v", got, want, catalog)
+	}
+	entry := catalog[0]
+	if entry.Name != "publisher-guard" || entry.Event != hookspkg.HookToolPreCall ||
+		entry.Mode != hookspkg.HookModeSync || !entry.Required ||
+		entry.Source != hookspkg.HookSourceExtension || entry.ExecutorKind != hookspkg.HookExecutorSubprocess ||
+		entry.Matcher.AgentName != "batuta-publisher" || entry.Metadata["extension"] != "required-hook-fixture" {
+		t.Fatalf("generated hook catalog entry = %#v, want required sync extension hook for batuta-publisher", entry)
+	}
+
+	var handlerCalls atomic.Int32
+	matchedResult, matchedErr := callHookProtectedTool(
+		ctx,
+		harness.hooks,
+		"batuta-publisher",
+		&handlerCalls,
+	)
+	if matchedErr == nil {
+		t.Fatalf("callHookProtectedTool(batuta-publisher) error = nil, want required hook failure")
+	}
+	var toolErr *toolspkg.ToolError
+	if !errors.As(matchedErr, &toolErr) || toolErr.Code != toolspkg.ErrorCodeDenied ||
+		toolErr.ToolID != "protected_publish" {
+		t.Fatalf("callHookProtectedTool(batuta-publisher) error = %#v, want structured tool_denied", matchedErr)
+	}
+	if !strings.Contains(matchedErr.Error(), "exit status 23") {
+		t.Fatalf("matched hook error = %q, want deliberate fixture exit status", matchedErr)
+	}
+	failureEvidence, err := os.ReadFile(failureMarker)
+	if err != nil {
+		t.Fatalf("os.ReadFile(deliberate hook failure marker) error = %v", err)
+	}
+	if got, want := string(failureEvidence), `{"agent_name":"batuta-publisher","tool_id":"protected_publish"}`; got != want {
+		t.Fatalf("deliberate hook failure marker = %s, want %s", got, want)
+	}
+	if len(matchedResult.Structured) != 0 {
+		t.Fatalf("matched tool result = %#v, want empty result on containment", matchedResult)
+	}
+	if got := handlerCalls.Load(); got != 0 {
+		t.Fatalf("protected handler calls after matched failure = %d, want 0", got)
+	}
+
+	nonMatchResult, err := callHookProtectedTool(ctx, harness.hooks, "batuta-reviewer", &handlerCalls)
+	if err != nil {
+		t.Fatalf("callHookProtectedTool(batuta-reviewer) error = %v", err)
+	}
+	if got := string(nonMatchResult.Structured); got != `{"published":true}` {
+		t.Fatalf("non-matching tool result = %s, want published success", got)
+	}
+	if got := handlerCalls.Load(); got != 1 {
+		t.Fatalf("protected handler calls after non-match = %d, want 1", got)
+	}
+
+	if err := manager.Stop(ctx); err != nil {
+		t.Fatalf("Manager.Stop(required hook fixture) error = %v", err)
+	}
+	managerRunning = false
+	pending, err := processStore.ListProcessRecords(ctx, toolruntime.ProcessQuery{States: []toolruntime.ProcessState{
+		toolruntime.ProcessStateRunning,
+		toolruntime.ProcessStateInterrupting,
+	}})
+	if err != nil {
+		t.Fatalf("ListProcessRecords(pending) error = %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending fixture processes = %#v, want none", pending)
+	}
 }
 
 func TestHookBindingResourceReconcileFiresToolHookThroughSessionNotifier(t *testing.T) {
@@ -461,6 +608,7 @@ func waitForCapturedTaskStatusChangedPayload(t *testing.T, capturePath string) h
 func newHookBindingIntegrationHarness(
 	t *testing.T,
 	nativeExecutors map[string]hookspkg.Executor,
+	processRegistries ...*toolruntime.Registry,
 ) *hookBindingIntegrationHarness {
 	t.Helper()
 
@@ -479,7 +627,11 @@ func newHookBindingIntegrationHarness(
 	}
 	hooks := hookspkg.NewHooks(
 		hookspkg.WithLogger(discardLogger()),
-		hookspkg.WithExecutorResolver(daemonExecutorResolver(nativeExecutors)),
+		hookspkg.WithExecutorResolver(daemonExecutorResolverWithSecrets(
+			nativeExecutors,
+			nil,
+			processRegistries...,
+		)),
 	)
 	t.Cleanup(hooks.Close)
 
@@ -524,6 +676,41 @@ func newHookBindingIntegrationHarness(
 			MaxScope: resources.ResourceScope{Kind: resources.ResourceScopeKindUser},
 		},
 	}
+}
+
+func callHookProtectedTool(
+	ctx context.Context,
+	runtime *hookspkg.Hooks,
+	agentName string,
+	handlerCalls *atomic.Int32,
+) (toolspkg.ToolResult, error) {
+	const toolID = toolspkg.ToolID("protected_publish")
+	_, err := runtime.DispatchToolPreCall(ctx, hookspkg.ToolPreCallPayload{
+		PayloadBase: hookspkg.PayloadBase{
+			Event:     hookspkg.HookToolPreCall,
+			Timestamp: time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC),
+		},
+		SessionContext: hookspkg.SessionContext{
+			SessionID: "publisher-session",
+			AgentName: agentName,
+		},
+		TurnContext: hookspkg.TurnContext{TurnID: "publisher-turn"},
+		ToolCallRef: hookspkg.ToolCallRef{
+			ToolCallID: "publisher-call",
+			ToolID:     string(toolID),
+		},
+		ToolInput: json.RawMessage(`{"release":"v1"}`),
+	})
+	if err != nil {
+		return toolspkg.ToolResult{}, toolspkg.NewToolError(
+			toolspkg.ErrorCodeDenied,
+			toolID,
+			"protected publish blocked by required hook: "+err.Error(),
+			err,
+		)
+	}
+	handlerCalls.Add(1)
+	return toolspkg.ToolResult{Structured: json.RawMessage(`{"published":true}`)}, nil
 }
 
 func (h *hookBindingIntegrationHarness) putBinding(
