@@ -130,6 +130,7 @@ const (
 type ExtensionDefinition struct {
 	Name                 string                           `json:"name"`
 	Version              string                           `json:"version"`
+	MinCompozyVersion    string                           `json:"min_compozy_version,omitempty"`
 	Description          string                           `json:"description,omitempty"`
 	RequiresEnv          []string                         `json:"requires_env,omitempty"`
 	Profiles             []DescribeProfile                `json:"profiles,omitempty"`

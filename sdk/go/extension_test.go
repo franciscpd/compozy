@@ -28,6 +28,59 @@ type digestFixture struct {
 	SHA256    string          `json:"sha256"`
 }
 
+func TestExtensionDescribeMinCompozyVersion(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name               string
+		minimumVersion     string
+		wantMinimumVersion string
+	}{
+		{
+			name:               "Should retain the SDK compatibility floor when omitted",
+			wantMinimumVersion: compozysdk.MinCompozyVersion,
+		},
+		{
+			name:               "Should preserve an explicit prerelease compatibility floor",
+			minimumVersion:     "0.3.0-beta.5",
+			wantMinimumVersion: "0.3.0-beta.5",
+		},
+		{
+			name:               "Should trim an explicit compatibility floor",
+			minimumVersion:     "  0.3.0-beta.5\t",
+			wantMinimumVersion: "0.3.0-beta.5",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			extension := compozysdk.NewExtension(
+				compozysdk.ExtensionDefinition{
+					Name:              "version-floor",
+					Version:           "0.1.0",
+					MinCompozyVersion: testCase.minimumVersion,
+					Subprocess:        compozysdk.DescribeSubprocess{Command: "./bin"},
+				},
+				compozysdk.WithStderr(io.Discard),
+			)
+
+			payload, err := extension.Describe()
+			if err != nil {
+				t.Fatalf("Describe() error = %v", err)
+			}
+			if payload.SDK.MinCompozyVersion != testCase.wantMinimumVersion {
+				t.Fatalf(
+					"Describe().SDK.MinCompozyVersion = %q, want %q",
+					payload.SDK.MinCompozyVersion,
+					testCase.wantMinimumVersion,
+				)
+			}
+		})
+	}
+}
+
 func TestToolRegistrationValidation(t *testing.T) {
 	t.Parallel()
 

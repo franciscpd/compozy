@@ -62,7 +62,12 @@ Templates carry no manifest. They carry `package.json`/`go.mod`, a source file, 
 
 The published SDKs are [`@compozy/extension-sdk`](https://www.npmjs.com/package/@compozy/extension-sdk)
 on npm and `github.com/compozy/compozy/sdk/go` as a Go module. Both are versioned with the daemon;
-`build` stamps the compatibility floor from the SDK you compiled against.
+by default, `build` stamps the compatibility floor from the SDK you compiled against.
+
+A Go extension that depends on a newer daemon contract can set
+`MinCompozyVersion: "0.3.0-beta.5"` in `ExtensionDefinition`. The SDK trims the value and places it
+in the generated manifest. Leaving it empty keeps the SDK release's compatibility floor. Build
+rejects an invalid semantic version.
 
 ## Declare once, in code
 

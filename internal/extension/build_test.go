@@ -693,7 +693,7 @@ expr = "not-a-cron"
 		}
 	})
 
-	t.Run("Should Stamp SDK Compatibility And Ignore Authored Manifest", func(t *testing.T) {
+	t.Run("Should preserve the described SDK compatibility floor in the generated manifest", func(t *testing.T) {
 		t.Parallel()
 
 		dir := t.TempDir()
@@ -704,7 +704,7 @@ version = "9.9.9"
 min_compozy_version = "9.9.9"
 `)
 		payload := validDescribePayload()
-		payload.SDK.MinCompozyVersion = "0.3.0-beta.1"
+		payload.SDK.MinCompozyVersion = " 0.3.0-beta.5 "
 		result, err := buildBundle(
 			testutil.Context(t),
 			BuildRequest{SourceDir: dir},
@@ -713,12 +713,41 @@ min_compozy_version = "9.9.9"
 		if err != nil {
 			t.Fatalf("buildBundle() error = %v", err)
 		}
-		if result.Manifest.MinCompozyVersion != payload.SDK.MinCompozyVersion {
+		const wantMinimumVersion = "0.3.0-beta.5"
+		if result.Manifest.MinCompozyVersion != wantMinimumVersion {
 			t.Fatalf(
 				"MinCompozyVersion = %q, want %q",
 				result.Manifest.MinCompozyVersion,
-				payload.SDK.MinCompozyVersion,
+				wantMinimumVersion,
 			)
+		}
+		manifestData, readErr := os.ReadFile(result.ManifestPath)
+		if readErr != nil {
+			t.Fatalf("os.ReadFile(generated manifest) error = %v", readErr)
+		}
+		if !strings.Contains(string(manifestData), `min_compozy_version = "0.3.0-beta.5"`) {
+			t.Fatalf("generated manifest = %s, want normalized minimum version", manifestData)
+		}
+	})
+
+	t.Run("Should reject an invalid described SDK compatibility floor", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		writeGoBuildFixture(t, dir)
+		payload := validDescribePayload()
+		payload.SDK.MinCompozyVersion = "not-semver"
+
+		result, err := buildBundle(
+			testutil.Context(t),
+			BuildRequest{SourceDir: dir},
+			newBuildTestRunner(&payload),
+		)
+		if result != nil || !errors.Is(err, ErrManifestInvalid) {
+			t.Fatalf("buildBundle() = %#v, %v; want ErrManifestInvalid", result, err)
+		}
+		if !strings.Contains(err.Error(), "min_compozy_version") {
+			t.Fatalf("buildBundle() error = %v, want min_compozy_version field", err)
 		}
 	})
 
