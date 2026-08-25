@@ -2,6 +2,7 @@ package contract
 
 import (
 	"encoding/json"
+	"errors"
 
 	"github.com/compozy/compozy/internal/loop/dsl"
 	"github.com/compozy/compozy/internal/network/participation"
@@ -268,6 +269,14 @@ type LoopConfigResponse struct {
 type PutLoopConfigRequest struct {
 	Config           LoopConfig `json:"config"`
 	ExpectedRevision *int64     `json:"expected_revision,omitempty"`
+}
+
+// Validate rejects wire values that cannot represent a stored config revision.
+func (r PutLoopConfigRequest) Validate() error {
+	if r.ExpectedRevision != nil && *r.ExpectedRevision < 0 {
+		return errors.New("expected_revision must be non-negative")
+	}
+	return nil
 }
 
 // LoopConfigRevisionConflictResponse reports both sides of a failed config CAS.

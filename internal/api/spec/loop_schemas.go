@@ -19,6 +19,18 @@ func customizeLoopGraphSchema(schema *openapi3.Schema) {
 	schema.Required = []string{"edges", "nodes"}
 }
 
+func customizePutLoopConfigRequestSchema(schema *openapi3.Schema) {
+	if schema == nil {
+		return
+	}
+	expectedRevision := schema.Properties["expected_revision"]
+	if expectedRevision == nil || expectedRevision.Value == nil {
+		return
+	}
+	minimum := float64(0)
+	expectedRevision.Value.Min = &minimum
+}
+
 func customizeStopWhenSpecSchema(schema *openapi3.Schema) {
 	object := openapi3.NewObjectSchema().
 		WithProperty("expr", openapi3.NewStringSchema().WithMinLength(1)).

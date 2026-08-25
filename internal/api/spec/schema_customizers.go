@@ -34,6 +34,7 @@ var schemaCustomizers = map[reflect.Type]func(*openapi3.Schema){
 	reflect.TypeFor[contract.LoopRunEventPayload]():                  customizeLoopRunEventPayloadSchema,
 	reflect.TypeFor[contract.LoopGenerationStartedRunEventPayload](): customizeLoopGenerationStartedRunEventPayloadSchema,
 	reflect.TypeFor[contract.LoopGateVerdictRunEventPayload]():       customizeLoopGateVerdictRunEventPayloadSchema,
+	reflect.TypeFor[contract.PutLoopConfigRequest]():                 customizePutLoopConfigRequestSchema,
 	reflect.TypeFor[contract.WindowManagerRevision](): func(schema *openapi3.Schema) {
 		*schema = *openapi3.NewIntegerSchema().
 			WithMin(0).

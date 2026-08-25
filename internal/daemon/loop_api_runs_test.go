@@ -282,6 +282,38 @@ func TestDaemonLoopAPIServiceShouldResolveRunWebEndpointBeforeStarting(t *testin
 	})
 }
 
+func TestDaemonLoopAPIServiceShouldRejectNegativeConfigRevisionBeforeAggregate(t *testing.T) {
+	t.Parallel()
+
+	aggregateCalled := false
+	aggregate := &loopApprovalAggregateStub{configureWithRevisionFn: func(
+		context.Context,
+		looppkg.WorkspaceID,
+		string,
+		string,
+		looppkg.LoopConfig,
+		*int64,
+	) (looppkg.ConfigSnapshot, error) {
+		aggregateCalled = true
+		return looppkg.ConfigSnapshot{}, nil
+	}}
+	service := &daemonLoopAPIService{aggregate: aggregate}
+	negative := int64(-1)
+	_, err := service.PutLoopConfig(
+		t.Context(),
+		"ws-1",
+		storepkg.DefaultProfileID,
+		"delivery",
+		contract.PutLoopConfigRequest{ExpectedRevision: &negative},
+	)
+	if !errors.Is(err, looppkg.ErrValidation) {
+		t.Fatalf("PutLoopConfig(negative revision) error = %v, want ErrValidation", err)
+	}
+	if aggregateCalled {
+		t.Fatal("PutLoopConfig called aggregate for a negative expected_revision")
+	}
+}
+
 func TestDaemonLoopAPIServiceRunLoopForwardsProfileOwner(t *testing.T) {
 	t.Parallel()
 
@@ -899,6 +931,14 @@ type loopApprovalAggregateStub struct {
 		looppkg.GateDecision,
 		task.ActorContext,
 	) error
+	configureWithRevisionFn func(
+		context.Context,
+		looppkg.WorkspaceID,
+		string,
+		string,
+		looppkg.LoopConfig,
+		*int64,
+	) (looppkg.ConfigSnapshot, error)
 }
 
 func (s *loopApprovalAggregateStub) Start(
@@ -912,6 +952,20 @@ func (s *loopApprovalAggregateStub) Start(
 		return s.startFn(ctx, ws, name, inputs, actor)
 	}
 	return nil, errors.New("unexpected Start call")
+}
+
+func (s *loopApprovalAggregateStub) ConfigureWithRevision(
+	ctx context.Context,
+	ws looppkg.WorkspaceID,
+	profileID string,
+	name string,
+	cfg looppkg.LoopConfig,
+	expectedRevision *int64,
+) (looppkg.ConfigSnapshot, error) {
+	if s.configureWithRevisionFn != nil {
+		return s.configureWithRevisionFn(ctx, ws, profileID, name, cfg, expectedRevision)
+	}
+	return looppkg.ConfigSnapshot{}, errors.New("unexpected ConfigureWithRevision call")
 }
 
 type loopAPIWorkspaceResolverErrorStub struct {

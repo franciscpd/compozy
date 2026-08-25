@@ -18,7 +18,7 @@ structured output. Never guess a schema — resolve `compozy__tool_info` for the
 
 Toolset `compozy__loops` — 31 native tools. All 28 Loop tools have matching `compozy loop` verbs;
 the three session-bound Goal tools use the session command/native control and report surfaces. The CLI also exposes
-operator-focused `edit`, `why`, `events`, and run-scoped `nodes` reads without new native tool IDs.
+operator-focused `config`, `edit`, `why`, `events`, and run-scoped `nodes` reads without new native tool IDs.
 
 | Native tool                  | Mode                            | CLI                         | Purpose                                                                                |
 | ---------------------------- | ------------------------------- | --------------------------- | -------------------------------------------------------------------------------------- |
@@ -36,7 +36,8 @@ operator-focused `edit`, `why`, `events`, and run-scoped `nodes` reads without n
 | `compozy__loop_fork`         | mutating · **capability-gated** | `compozy loop fork`         | Create a linked run from a historical generation.                                      |
 | `compozy__loop_create`       | mutating                        | `compozy loop create`       | Create/fork, or CAS-publish when `expected_version` is set.                            |
 | `compozy__loop_run`          | mutating                        | `compozy loop run`          | Start a run, or dry-run with `dry: true` / `--dry-run`.                                |
-| `compozy__loop_configure`    | mutating                        | `compozy loop configure`    | Write per-Loop runtime config overrides.                                               |
+| —                            | read                            | `compozy loop config`       | Read stored/effective config plus its revision without mutation.                       |
+| `compozy__loop_configure`    | mutating                        | `compozy loop configure`    | Patch per-Loop config, optionally with revision CAS.                                   |
 | `compozy__loop_pause`        | mutating                        | `compozy loop pause`        | Request a generation-boundary pause.                                                   |
 | `compozy__loop_resume`       | mutating                        | `compozy loop resume`       | Resume a paused or pause-requested run.                                                |
 | `compozy__loop_approve`      | mutating · **capability-gated** | `compozy loop approve`      | Apply one human-gate decision.                                                         |
@@ -94,6 +95,27 @@ An imported snapshot carries `historical: true`. Historical rows remain visible 
 daemon never reconciles them as live work and control verbs reject them as read-only. List aggregates
 count them only in `historical`; `live`, `terminal`, `succeeded`, and `failed` describe daemon-managed
 runs.
+
+## Revisioned Loop Config
+
+Read the snapshot with `compozy loop config --workspace <ref> --name <loop> -o json` or HTTP/UDS
+`GET /api/workspaces/{workspace_id}/loops/{name}/config`. The response contains nullable `config`,
+resolved `effective_config`, and `config_revision`. An absent override is `config: null` at revision
+`0`; reads never create a config row.
+
+For a concurrent-safe CLI patch, pass the revision you read:
+
+```bash
+compozy loop configure --workspace <ref> --name <loop> \
+  --file loop-config.yaml --expected-revision <config_revision> -o json
+```
+
+`compozy__loop_configure` accepts the same optional non-negative `expected_revision` beside `name`
+and `config`; resolve its live descriptor before calling it. HTTP/UDS `PUT .../config` uses the same
+field. A semantic change increments the revision by one; an unchanged patch keeps it stable. A stale
+HTTP/UDS write returns `409` with `expected_revision` and `current_revision`; a native stale write is
+a tool conflict. Read the current snapshot, review the intervening change, and construct a new patch
+instead of replaying the stale request. Omitting the field keeps legacy unguarded patch semantics.
 
 ## Typed Inputs
 

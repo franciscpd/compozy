@@ -281757,6 +281757,7 @@
                   },
                   "expected_revision": {
                     "format": "int64",
+                    "minimum": 0,
                     "nullable": true,
                     "type": "integer"
                   }

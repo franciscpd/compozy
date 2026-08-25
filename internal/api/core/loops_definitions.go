@@ -143,6 +143,10 @@ func (h *BaseHandlers) PutLoopConfig(c *gin.Context) {
 		h.respondLoopError(c, loopDecodeError("config", err))
 		return
 	}
+	if err := req.Validate(); err != nil {
+		h.respondLoopError(c, fmt.Errorf("%w: invalid Loop config request: %v", looppkg.ErrValidation, err))
+		return
+	}
 	profileID, ok := h.loopDefinitionMutationProfileID(c)
 	if !ok {
 		return

@@ -154,7 +154,7 @@ func TestLoopOpenAPIContract(t *testing.T) {
 				name:       "put config",
 				path:       "/api/workspaces/{workspace_id}/loops/{name}/config",
 				method:     "PUT",
-				statuses:   []int{200, 400, 404, 503, 500},
+				statuses:   []int{200, 400, 404, 409, 503, 500},
 				parameters: []string{"workspace_id", "name"},
 			},
 			{
@@ -430,6 +430,11 @@ func TestLoopOpenAPIContract(t *testing.T) {
 		)
 		effective := propertySchema(t, configResponse, "effective_config")
 		assertRequired(t, effective, "environment")
+		putConfig := operationFor(t, doc, "/api/workspaces/{workspace_id}/loops/{name}/config", "PUT")
+		expectedRevision := propertySchema(t, jsonRequestSchema(t, putConfig), "expected_revision")
+		if expectedRevision.Min == nil || *expectedRevision.Min != 0 {
+			t.Fatalf("PUT /config expected_revision minimum = %v, want 0", expectedRevision.Min)
+		}
 
 		pauseRun := operationFor(t, doc, "/api/workspaces/{workspace_id}/loop-runs/{run_id}/pause", "POST")
 		assertRequired(t, jsonResponseSchema(t, pauseRun, 422), "error")

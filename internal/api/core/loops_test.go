@@ -394,20 +394,57 @@ func TestLoopHandlersExposeCatalogRunConfigAnnotationsAndEvents(t *testing.T) {
 	t.Run("Should serialize an absent stored config as explicit null", func(t *testing.T) {
 		t.Parallel()
 
-		service := happyLoopService(t)
-		service.getLoopConfigFn = func(
-			context.Context,
-			string,
-			string,
-		) (contract.LoopConfigResponse, error) {
-			return contract.LoopConfigResponse{EffectiveConfig: contract.LoopEffectiveConfig{}}, nil
-		}
-		_, engine := newLoopHandlerFixture(t, "httpapi", service)
+		for _, transport := range []string{"httpapi", "udsapi"} {
+			service := happyLoopService(t)
+			service.getLoopConfigFn = func(
+				context.Context,
+				string,
+				string,
+			) (contract.LoopConfigResponse, error) {
+				return contract.LoopConfigResponse{EffectiveConfig: contract.LoopEffectiveConfig{}}, nil
+			}
+			_, engine := newLoopHandlerFixture(t, transport, service)
 
-		response := performRequest(t, engine, http.MethodGet, "/workspaces/ws-1/loops/alpha/config", nil)
-		assertLoopStatus(t, response.Code, http.StatusOK, response.Body.String())
-		if body := response.Body.String(); !strings.Contains(body, `"config":null`) {
-			t.Fatalf("GET /config body = %s, want explicit config:null", body)
+			response := performRequest(t, engine, http.MethodGet, "/workspaces/ws-1/loops/alpha/config", nil)
+			assertLoopStatus(t, response.Code, http.StatusOK, response.Body.String())
+			if body := response.Body.String(); !strings.Contains(body, `"config":null`) {
+				t.Fatalf("%s GET /config body = %s, want explicit config:null", transport, body)
+			}
+			var payload map[string]json.RawMessage
+			testutil.DecodeJSONResponse(t, response, &payload)
+			if revision, ok := payload["config_revision"]; !ok || string(revision) != "0" {
+				t.Fatalf("%s GET /config config_revision = %s, present=%t, want explicit 0", transport, revision, ok)
+			}
+		}
+	})
+
+	t.Run("Should reject a negative config revision before calling the Loop service", func(t *testing.T) {
+		t.Parallel()
+
+		for _, transport := range []string{"httpapi", "udsapi"} {
+			serviceCalled := false
+			service := happyLoopService(t)
+			service.putLoopConfigFn = func(
+				context.Context,
+				string,
+				string,
+				contract.PutLoopConfigRequest,
+			) (contract.LoopConfigResponse, error) {
+				serviceCalled = true
+				return contract.LoopConfigResponse{}, nil
+			}
+			_, engine := newLoopHandlerFixture(t, transport, service)
+			response := performRequest(
+				t,
+				engine,
+				http.MethodPut,
+				"/workspaces/ws-1/loops/alpha/config",
+				[]byte(`{"config":{},"expected_revision":-1}`),
+			)
+			assertLoopStatus(t, response.Code, http.StatusBadRequest, response.Body.String())
+			if serviceCalled {
+				t.Fatalf("%s PUT /config called Loop service for a negative expected_revision", transport)
+			}
 		}
 	})
 }

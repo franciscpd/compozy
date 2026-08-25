@@ -53,6 +53,9 @@ func (s *daemonLoopAPIService) PutLoopConfig(
 	name string,
 	req contract.PutLoopConfigRequest,
 ) (contract.LoopConfigResponse, error) {
+	if err := req.Validate(); err != nil {
+		return contract.LoopConfigResponse{}, fmt.Errorf("%w: invalid Loop config request: %v", looppkg.ErrValidation, err)
+	}
 	ws, err := normalizeLoopWorkspaceID(workspaceID)
 	if err != nil {
 		return contract.LoopConfigResponse{}, err
